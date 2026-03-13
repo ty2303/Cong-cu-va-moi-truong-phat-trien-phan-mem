@@ -41,6 +41,22 @@ export const db = {
       description: "Samsung Galaxy",
       icon: "Smartphone",
       createdAt: now()
+    },
+    {
+      id: "cat-xiaomi",
+      name: "Xiaomi",
+      slug: "xiaomi",
+      description: "Xiaomi va Redmi",
+      icon: "Smartphone",
+      createdAt: now()
+    },
+    {
+      id: "cat-oppo",
+      name: "OPPO",
+      slug: "oppo",
+      description: "OPPO Reno va Find",
+      icon: "Smartphone",
+      createdAt: now()
     }
   ],
   products: [
@@ -73,9 +89,67 @@ export const db = {
       stock: 8,
       createdAt: now(),
       updatedAt: now()
+    },
+    {
+      id: "prod-xiaomi-14",
+      name: "Xiaomi 14",
+      brand: "Xiaomi",
+      categoryId: "cat-xiaomi",
+      price: 18990000,
+      originalPrice: 20990000,
+      image: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=800&q=80",
+      rating: 4.7,
+      badge: "Gia tot",
+      specs: "Snapdragon 8 Gen 3, 256GB, Leica Camera",
+      stock: 15,
+      createdAt: now(),
+      updatedAt: now()
+    },
+    {
+      id: "prod-oppo-find-x8",
+      name: "OPPO Find X8",
+      brand: "OPPO",
+      categoryId: "cat-oppo",
+      price: 21990000,
+      originalPrice: 23990000,
+      image: "https://images.unsplash.com/photo-1598327105666-5b89351aff97?auto=format&fit=crop&w=800&q=80",
+      rating: 4.6,
+      badge: "Noi bat",
+      specs: "Dimensity flagship, 512GB, Hasselblad Camera",
+      stock: 10,
+      createdAt: now(),
+      updatedAt: now()
     }
   ],
-  orders: [],
+  orders: [
+    {
+      id: "order-1",
+      userId: "user-1",
+      email: "demo@example.com",
+      customerName: "Demo User",
+      phone: "0900000001",
+      address: "123 Duong Nguyen Hue",
+      city: "TP.HCM",
+      district: "Quan 1",
+      ward: "Ben Nghe",
+      note: "Giao gio hanh chinh",
+      paymentMethod: "COD",
+      status: "DELIVERED",
+      items: [
+        {
+          productId: "prod-iphone-15",
+          productName: "iPhone 15 Pro",
+          price: 27990000,
+          quantity: 1
+        }
+      ],
+      subtotal: 27990000,
+      shippingFee: 0,
+      total: 27990000,
+      createdAt: now(),
+      paymentStatus: "PAID"
+    }
+  ],
   reviews: [
     {
       id: "review-1",
@@ -84,6 +158,16 @@ export const db = {
       username: "demo",
       rating: 5,
       comment: "San pham dep, giao hang nhanh.",
+      images: [],
+      createdAt: now()
+    },
+    {
+      id: "review-2",
+      productId: "prod-galaxy-s25",
+      userId: "user-1",
+      username: "demo",
+      rating: 4,
+      comment: "May manh, man hinh dep, camera on.",
       images: [],
       createdAt: now()
     }
