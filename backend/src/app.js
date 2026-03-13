@@ -1,0 +1,51 @@
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import morgan from "morgan";
+import { fail, ok } from "./lib/apiResponse.js";
+import { attachUser } from "./middleware/auth.js";
+import { authRouter } from "./routes/auth.js";
+import { categoriesRouter } from "./routes/categories.js";
+import { momoRouter } from "./routes/momo.js";
+import { ordersRouter } from "./routes/orders.js";
+import { productsRouter } from "./routes/products.js";
+import { reviewsRouter } from "./routes/reviews.js";
+import { uploadRouter } from "./routes/upload.js";
+import { usersRouter } from "./routes/users.js";
+import { wishlistRouter } from "./routes/wishlist.js";
+
+dotenv.config();
+
+export const app = express();
+
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL?.split(",") ?? "*",
+    credentials: true
+  })
+);
+app.use(express.json());
+app.use(morgan("dev"));
+app.use(attachUser);
+
+app.get("/health", (_req, res) => {
+  res.json(ok({ service: "backend", uptime: process.uptime() }));
+});
+
+app.get("/oauth2/authorization/google", (_req, res) => {
+  res.redirect(`${process.env.FRONTEND_URL ?? "http://localhost:5173"}/login`);
+});
+
+app.use("/api/auth", authRouter);
+app.use("/api/products", productsRouter);
+app.use("/api/categories", categoriesRouter);
+app.use("/api/orders", ordersRouter);
+app.use("/api/wishlist", wishlistRouter);
+app.use("/api/reviews", reviewsRouter);
+app.use("/api/upload", uploadRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/momo", momoRouter);
+
+app.use((_req, res) => {
+  res.status(404).json(fail("Not found", 404));
+});
