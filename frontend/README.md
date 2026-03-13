@@ -85,7 +85,7 @@ All environment variables must be prefixed with `VITE_` to be exposed to the cli
 | ------------------- | ------------------------------------ | ---------- |
 | `VITE_APP_NAME`     | Application name                     | Nhom12 App |
 | `VITE_APP_ENV`      | Environment (development/production) | —          |
-| `VITE_API_BASE_URL` | API base URL                         | /api       |
+| `VITE_API_BASE_URL` | API base URL                         | http://localhost:8080/api in dev, /api in production |
 
 Files:
 
@@ -94,15 +94,13 @@ Files:
 - `.env.production` — Prod overrides
 - `.env.local` — Local overrides (NOT committed, copy from `.env.local.example`)
 
-## API Proxy
+## API Base URL
 
-In development, requests to `/api/*` are proxied to `http://localhost:8080` (Spring Boot backend).
+For local development, copy `frontend/.env.example` to `.env.local` if you need
+to recreate the environment variables manually. The default development API URL
+is `http://localhost:8080/api`.
 
-This means:
-
-- No CORS issues in development
-- Use relative paths: `fetch('/api/users')` not `fetch('http://localhost:8080/api/users')`
-- Spring Boot must be running on port 8080 for API calls to work
+For production builds, keep `VITE_API_BASE_URL=/api`.
 
 ## Path Aliases
 

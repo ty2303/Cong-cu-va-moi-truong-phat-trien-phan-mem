@@ -27,7 +27,9 @@ npm run dev
 
 Frontend chay mac dinh tai `http://localhost:5173`.
 
-Trong moi truong dev, Vite proxy `/api` sang backend `http://localhost:8080`.
+Trong moi truong dev, frontend nen duoc cau hinh goi truc tiep backend tai
+`http://localhost:8080/api`. Neu can tao lai file env local, copy gia tri mau
+tu `frontend/.env.example`.
 
 ## Tai khoan demo
 
