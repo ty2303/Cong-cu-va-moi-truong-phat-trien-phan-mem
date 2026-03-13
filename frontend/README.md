@@ -81,10 +81,10 @@ src/
 
 All environment variables must be prefixed with `VITE_` to be exposed to the client.
 
-| Variable            | Description                          | Default    |
-| ------------------- | ------------------------------------ | ---------- |
-| `VITE_APP_NAME`     | Application name                     | Nhom12 App |
-| `VITE_APP_ENV`      | Environment (development/production) | —          |
+| Variable            | Description                          | Default                                              |
+| ------------------- | ------------------------------------ | ---------------------------------------------------- |
+| `VITE_APP_NAME`     | Application name                     | Nhom12 App                                           |
+| `VITE_APP_ENV`      | Environment (development/production) | —                                                    |
 | `VITE_API_BASE_URL` | API base URL                         | http://localhost:8080/api in dev, /api in production |
 
 Files:
