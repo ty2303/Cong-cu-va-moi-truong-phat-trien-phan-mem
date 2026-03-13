@@ -63,3 +63,8 @@ Repo dang dung workflow tach rieng giong repo mau:
 - Backend hien la scaffold Express voi du lieu in-memory, chua dung database that
 - Frontend la ban goc tu repo mau, toi chi dieu chinh script test de hop voi CI hien tai
 - `CODEOWNERS` da duoc doi sang `@ty2303`
+
+## Tai lieu bo sung
+
+- `docs/system-structure.md`: tom tat cau truc repo va phan vung module
+- `docs/data-model.md`: mo ta mo hinh du lieu muc co so de chuyen sang DB that
