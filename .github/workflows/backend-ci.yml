@@ -7,6 +7,7 @@ on:
   pull_request:
     branches: [main, dev]
     paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,9 +20,12 @@ jobs:
   ci:
     name: Lint, Test & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
+    env:
+      CI: true
 
     steps:
       - name: Checkout code
@@ -69,3 +73,12 @@ jobs:
           else
             echo "No backend build script found, skipping."
           fi
+
+      - name: Smoke test health endpoint
+        shell: bash
+        run: |
+          node src/server.js &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID" EXIT
+          sleep 3
+          curl --fail http://127.0.0.1:8080/health
