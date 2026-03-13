@@ -17,6 +17,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!frontend/.env.example
 
 # editor / OS
 .DS_Store
