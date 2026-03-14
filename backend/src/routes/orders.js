@@ -16,7 +16,7 @@ ordersRouter.get("/my", requireAuth, (req, res) => {
   res.json(ok(items));
 });
 
-ordersRouter.post("/", (req, res) => {
+ordersRouter.post("/", requireAuth, (req, res) => {
   const order = createOrder(req.body, req.user);
   res.status(201).json(ok(order, "Dat hang thanh cong", 201));
 });
