@@ -1,20 +1,20 @@
 import crypto from "node:crypto";
 import express from "express";
-import { db } from "../data/store.js";
+import { cleanDocument, getCollection } from "../data/store.js";
 import { ok } from "../lib/apiResponse.js";
 import { requireAuth } from "../middleware/auth.js";
 
 export const reviewsRouter = express.Router();
 
-reviewsRouter.get("/", (req, res) => {
+reviewsRouter.get("/", async (req, res) => {
   const productId = String(req.query.productId ?? "");
-  const items = productId
-    ? db.reviews.filter((review) => review.productId === productId)
-    : db.reviews;
+  const reviews = await getCollection("reviews");
+  const query = productId ? { productId } : {};
+  const items = (await reviews.find(query).sort({ createdAt: -1 }).toArray()).map(cleanDocument);
   res.json(ok(items));
 });
 
-reviewsRouter.post("/", requireAuth, (req, res) => {
+reviewsRouter.post("/", requireAuth, async (req, res) => {
   const review = {
     id: crypto.randomUUID(),
     productId: req.body.productId,
@@ -25,15 +25,14 @@ reviewsRouter.post("/", requireAuth, (req, res) => {
     images: req.body.images ?? [],
     createdAt: new Date().toISOString()
   };
-  db.reviews.unshift(review);
+  const reviews = await getCollection("reviews");
+  await reviews.insertOne(review);
   res.status(201).json(ok(review, "Them danh gia thanh cong", 201));
 });
 
-reviewsRouter.delete("/:id", requireAuth, (req, res) => {
-  const index = db.reviews.findIndex((review) => review.id === req.params.id);
-  if (index >= 0) {
-    db.reviews.splice(index, 1);
-  }
+reviewsRouter.delete("/:id", requireAuth, async (req, res) => {
+  const reviews = await getCollection("reviews");
+  await reviews.deleteOne({ id: req.params.id });
   res.json(ok(null, "Xoa danh gia thanh cong"));
 });
 

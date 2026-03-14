@@ -1,14 +1,14 @@
 import { getUserByToken, sanitizeUser } from "../data/store.js";
 import { fail } from "../lib/apiResponse.js";
 
-export function attachUser(req, _res, next) {
+export async function attachUser(req, _res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ")
     ? authHeader.slice(7)
     : null;
 
   if (token) {
-    const user = getUserByToken(token);
+    const user = await getUserByToken(token);
     if (user) {
       req.user = sanitizeUser(user);
       req.token = token;
