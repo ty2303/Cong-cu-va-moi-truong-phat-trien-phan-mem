@@ -25,6 +25,28 @@ interface AuthResponse {
   role: 'USER' | 'ADMIN';
 }
 
+const isValidEmail = (email: string) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const getPasswordStrength = (password: string): { level: number; label: string; color: string } => {
+  if (password.length === 0) return { level: 0, label: '', color: '' };
+  if (password.length < 6) return { level: 1, label: 'Yếu', color: 'bg-red-500' };
+  
+  let strength = 0;
+  if (password.length >= 6) strength++;
+  if (password.length >= 8) strength++;
+  if (/[A-Z]/.test(password)) strength++;
+  if (/[0-9]/.test(password)) strength++;
+  if (/[^A-Za-z0-9]/.test(password)) strength++;
+  
+  if (strength <= 2) return { level: strength, label: 'Yếu', color: 'bg-red-500' };
+  if (strength <= 3) return { level: strength, label: 'Trung bình', color: 'bg-yellow-500' };
+  if (strength <= 4) return { level: strength, label: 'Mạnh', color: 'bg-green-500' };
+  return { level: strength, label: 'Rất mạnh', color: 'bg-green-600' };
+};
+
 export function Component() {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
@@ -35,6 +57,8 @@ export function Component() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState(false);
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
@@ -55,6 +79,17 @@ export function Component() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!isLogin) {
+      if (!isValidEmail(email)) {
+        setError('Vui lòng nhập địa chỉ email hợp lệ');
+        return;
+      }
+      if (!agreedToTerms) {
+        setError('Vui lòng đồng ý với điều khoản sử dụng');
+        return;
+      }
+    }
 
     if (!isLogin && password !== confirmPassword) {
       setError('Mật khẩu nhập lại không khớp');
@@ -77,6 +112,13 @@ export function Component() {
         body,
       );
       const { token, ...user } = res.data.data;
+      
+      if (!isLogin) {
+        setRegisterSuccess(true);
+        setLoading(false);
+        return;
+      }
+      
       login(token, user as AuthUser);
       useWishlistStore.getState().fetch();
       navigate(user.role === 'ADMIN' ? '/admin' : '/');
@@ -105,7 +147,54 @@ export function Component() {
         transition={{ duration: 0.4 }}
         className="relative z-10 w-full max-w-md"
       >
-        <div className="card overflow-hidden bg-surface p-8">
+        <AnimatePresence mode="wait">
+          {registerSuccess ? (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="card overflow-hidden bg-surface p-8 text-center"
+            >
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100"
+              >
+                <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </motion.div>
+              <h2 className="font-display text-xl font-bold text-text-primary">
+                Đăng ký thành công!
+              </h2>
+              <p className="mt-2 text-sm text-text-muted">
+                Chúc mừng bạn đã tạo tài khoản thành công. Vui lòng đăng nhập để tiếp tục.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisterSuccess(false);
+                  setIsLogin(true);
+                  setUsername('');
+                  setEmail('');
+                  setPassword('');
+                  setConfirmPassword('');
+                }}
+                className="btn-primary mt-6 w-full"
+              >
+                Đăng nhập ngay
+              </button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="form"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="card overflow-hidden bg-surface p-8"
+            >
           {/* Header */}
           <div className="mb-8 text-center">
             <motion.div
@@ -246,6 +335,18 @@ export function Component() {
                   )}
                 </button>
               </div>
+              {/* Password strength indicator - only for register */}
+              {!isLogin && password.length > 0 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1 h-1.5 rounded-full bg-border overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 ${getPasswordStrength(password).color}`}
+                      style={{ width: `${Math.min((getPasswordStrength(password).level / 5) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-text-muted">{getPasswordStrength(password).label}</span>
+                </div>
+              )}
             </div>
 
             {/* Confirm Password - only for register */}
@@ -296,6 +397,26 @@ export function Component() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Terms checkbox - only for register */}
+                  <label
+                    htmlFor="terms"
+                    className="flex items-start gap-2 text-xs text-text-secondary cursor-pointer"
+                  >
+                    <input
+                      id="terms"
+                      type="checkbox"
+                      checked={agreedToTerms}
+                      onChange={(e) => setAgreedToTerms(e.target.checked)}
+                      className="mt-0.5 rounded border-border text-brand focus:ring-brand"
+                    />
+                    <span>
+                      Tôi đồng ý với{' '}
+                      <a href="/about" className="text-brand hover:underline">Điều khoản sử dụng</a>
+                      {' '}và{' '}
+                      <a href="/about" className="text-brand hover:underline">Chính sách bảo mật</a>
+                    </span>
+                  </label>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -399,7 +520,9 @@ export function Component() {
               <span className="text-text-primary">Đăng nhập với Google</span>
             </button>
           </form>
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Bottom hint text */}
         <p className="mt-6 text-center text-xs text-text-muted">
