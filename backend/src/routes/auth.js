@@ -56,23 +56,57 @@ authRouter.post("/login", async (req, res) => {
  * - Trả về JWT token + thông tin user
  */
 authRouter.post("/register", async (req, res) => {
-  const { username, email, password } = req.body;
+  const rawUsername = req.body.username;
+  const rawEmail = req.body.email;
+  const { password } = req.body;
+
+  // Trim input
+  const username = typeof rawUsername === "string" ? rawUsername.trim() : "";
+  const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
 
   console.log(`[AUTH] Register attempt for user: ${username}, email: ${email}`);
 
-  // Validate input
-  if (!username || !email || !password) {
-    return res.status(400).json(fail("Vui lòng nhập đầy đủ thông tin đăng ký", 400));
+  // --- Validate input ---
+  const errors = {};
+
+  // Kiểm tra trường bắt buộc
+  if (!username) errors.username = ["Vui lòng nhập tên đăng nhập"];
+  if (!email) errors.email = ["Vui lòng nhập email"];
+  if (!password) errors.password = ["Vui lòng nhập mật khẩu"];
+
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json(fail("Vui lòng nhập đầy đủ thông tin đăng ký", 400, errors));
   }
 
+  // Validate username format: chỉ chữ cái, số, gạch dưới, 3-30 ký tự
+  const usernameRegex = /^[a-zA-Z0-9_]{3,30}$/;
+  if (!usernameRegex.test(username)) {
+    return res.status(400).json(
+      fail(
+        "Tên đăng nhập chỉ được chứa chữ cái, số và dấu gạch dưới, dài 3-30 ký tự",
+        400,
+        { username: ["Tên đăng nhập chỉ được chứa chữ cái, số và dấu gạch dưới, dài 3-30 ký tự"] }
+      )
+    );
+  }
+
+  // Validate password length
   if (password.length < 6) {
-    return res.status(400).json(fail("Mật khẩu phải có ít nhất 6 ký tự", 400));
+    return res.status(400).json(
+      fail("Mật khẩu phải có ít nhất 6 ký tự", 400, {
+        password: ["Mật khẩu phải có ít nhất 6 ký tự"]
+      })
+    );
   }
 
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
-    return res.status(400).json(fail("Email không hợp lệ", 400));
+    return res.status(400).json(
+      fail("Email không hợp lệ", 400, {
+        email: ["Email không hợp lệ"]
+      })
+    );
   }
 
   try {
@@ -82,8 +116,14 @@ authRouter.post("/register", async (req, res) => {
     });
 
     if (exists) {
-      const field = exists.username === username ? "Tên đăng nhập" : "Email";
-      return res.status(409).json(fail(`${field} đã được sử dụng`, 409));
+      const isUsernameTaken = exists.username === username;
+      const field = isUsernameTaken ? "username" : "email";
+      const label = isUsernameTaken ? "Tên đăng nhập" : "Email";
+      return res.status(409).json(
+        fail(`${label} đã được sử dụng`, 409, {
+          [field]: [`${label} đã được sử dụng`]
+        })
+      );
     }
 
     // Tạo user mới (password sẽ tự hash qua pre-save hook)
@@ -106,7 +146,13 @@ authRouter.post("/register", async (req, res) => {
 
     // Xử lý lỗi duplicate key từ MongoDB
     if (error.code === 11000) {
-      return res.status(409).json(fail("Tài khoản đã tồn tại", 409));
+      const dupField = Object.keys(error.keyPattern || {})[0];
+      const label = dupField === "username" ? "Tên đăng nhập" : "Email";
+      return res.status(409).json(
+        fail(`${label} đã được sử dụng`, 409, {
+          [dupField]: [`${label} đã được sử dụng`]
+        })
+      );
     }
 
     return res.status(500).json(fail("Lỗi server", 500));
