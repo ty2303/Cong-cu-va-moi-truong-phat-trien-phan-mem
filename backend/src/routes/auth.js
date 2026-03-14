@@ -1,50 +1,64 @@
+import crypto from "node:crypto";
 import express from "express";
-import { db, issueToken, sanitizeUser } from "../data/store.js";
+import { User } from "../models/User.js";
+import { issueToken, sanitizeUser, db } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
 
 export const authRouter = express.Router();
 
-authRouter.post("/login", (req, res) => {
+authRouter.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  const user = db.users.find(
-    (item) => item.username === username && item.password === password
-  );
-
-  if (!user) {
-    return res.status(401).json(fail("Sai ten dang nhap hoac mat khau", 401));
+  
+  if (!username || !password) {
+    return res.status(400).json(fail("Thieu thong tin dang nhap", 400));
   }
 
-  const token = issueToken(user.id);
-  return res.json(ok({ token, ...sanitizeUser(user) }, "Dang nhap thanh cong"));
+  try {
+    const user = await User.findOne({ username, password, authProvider: "LOCAL" });
+
+    if (!user) {
+      return res.status(401).json(fail("Sai ten dang nhap hoac mat khau", 401));
+    }
+
+    const token = issueToken(user._id.toString());
+    return res.json(ok({ token, ...sanitizeUser(user) }, "Dang nhap thanh cong"));
+  } catch (error) {
+    console.error("Login error:", error);
+    return res.status(500).json(fail("Loi server", 500));
+  }
 });
 
-authRouter.post("/register", (req, res) => {
+authRouter.post("/register", async (req, res) => {
   const { username, email, password } = req.body;
+  
   if (!username || !email || !password) {
     return res.status(400).json(fail("Thieu thong tin dang ky", 400));
   }
 
-  const exists = db.users.some(
-    (user) => user.username === username || user.email === email
-  );
-  if (exists) {
-    return res.status(409).json(fail("Tai khoan da ton tai", 409));
+  try {
+    const exists = await User.findOne({
+      $or: [{ username }, { email }]
+    });
+    
+    if (exists) {
+      return res.status(409).json(fail("Tai khoan da ton tai", 409));
+    }
+
+    const user = await User.create({
+      username,
+      email,
+      password,
+      role: "USER",
+      hasPassword: true,
+      authProvider: "LOCAL"
+    });
+
+    const token = issueToken(user._id.toString());
+    return res.status(201).json(ok({ token, ...sanitizeUser(user) }, "Dang ky thanh cong", 201));
+  } catch (error) {
+    console.error("Register error:", error);
+    return res.status(500).json(fail("Loi server", 500));
   }
-
-  const user = {
-    id: `user-${db.users.length + 1}`,
-    username,
-    email,
-    password,
-    role: "USER",
-    hasPassword: true,
-    authProvider: "LOCAL",
-    createdAt: new Date().toISOString()
-  };
-
-  db.users.push(user);
-  const token = issueToken(user.id);
-  return res.status(201).json(ok({ token, ...sanitizeUser(user) }, "Dang ky thanh cong", 201));
 });
 
 authRouter.post("/forgot-password", (_req, res) => {

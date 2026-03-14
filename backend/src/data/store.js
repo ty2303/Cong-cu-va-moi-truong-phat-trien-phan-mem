@@ -215,8 +215,11 @@ export function getUserByToken(token) {
 }
 
 export function sanitizeUser(user) {
-  const { password, ...safeUser } = user;
-  return safeUser;
+  const { password, _id, __v, ...safeUser } = user;
+  return {
+    id: user._id?.toString() ?? user.id,
+    ...safeUser
+  };
 }
 
 export function createOrder(payload, user) {
