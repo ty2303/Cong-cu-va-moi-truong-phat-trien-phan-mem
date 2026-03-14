@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
+import jwt from "jsonwebtoken";
 
 const now = () => new Date().toISOString();
+
+const JWT_SECRET = process.env.JWT_SECRET || "development-secret";
+const JWT_EXPIRES_IN = "7d";
 
 export const db = {
   users: [
@@ -203,22 +207,62 @@ export function paginate(items, page = 0, size = 10) {
   };
 }
 
+/**
+ * Tạo JWT token cho userId.
+ * @param {string} userId
+ * @returns {string} JWT token
+ */
 export function issueToken(userId) {
-  const token = `${userId}-${crypto.randomUUID()}`;
-  db.tokens.set(token, userId);
-  return token;
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
+/**
+ * Verify JWT token và trả về userId.
+ * @param {string} token
+ * @returns {string|null} userId hoặc null nếu token không hợp lệ
+ */
+export function verifyToken(token) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lấy user từ in-memory store theo token (fallback cho legacy tokens).
+ * @param {string} token
+ * @returns {object|null}
+ */
 export function getUserByToken(token) {
-  const userId = db.tokens.get(token);
-  return db.users.find((user) => user.id === userId) ?? null;
+  // Thử verify JWT trước
+  const userId = verifyToken(token);
+  if (userId) {
+    // Tìm trong in-memory store (fallback)
+    return db.users.find((user) => user.id === userId) ?? null;
+  }
+
+  // Fallback: legacy token trong Map
+  const legacyUserId = db.tokens.get(token);
+  return db.users.find((user) => user.id === legacyUserId) ?? null;
 }
 
+/**
+ * Sanitize user object - loại bỏ password và các trường nội bộ.
+ * Hỗ trợ cả Mongoose document và plain object.
+ * @param {object} user - User object (Mongoose doc hoặc plain)
+ * @returns {object} User object đã loại bỏ thông tin nhạy cảm
+ */
 export function sanitizeUser(user) {
-  const { password, _id, __v, ...safeUser } = user;
+  // Nếu là Mongoose document, convert sang plain object
+  const plainUser = user.toObject ? user.toObject() : { ...user };
+  const { password, __v, ...safeUser } = plainUser;
+
   return {
-    id: user._id?.toString() ?? user.id,
-    ...safeUser
+    id: plainUser._id?.toString() ?? plainUser.id,
+    ...safeUser,
+    _id: undefined
   };
 }
 

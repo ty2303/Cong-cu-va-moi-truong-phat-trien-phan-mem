@@ -1,16 +1,37 @@
-import { getUserByToken, sanitizeUser } from "../data/store.js";
+import { User } from "../models/User.js";
+import { verifyToken, getUserByToken, sanitizeUser } from "../data/store.js";
 import { fail } from "../lib/apiResponse.js";
 
-export function attachUser(req, _res, next) {
+/**
+ * Middleware: gắn user vào req nếu có Bearer token hợp lệ.
+ * Ưu tiên tìm user từ MongoDB, fallback sang in-memory store.
+ */
+export async function attachUser(req, _res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ")
     ? authHeader.slice(7)
     : null;
 
   if (token) {
-    const user = getUserByToken(token);
-    if (user) {
-      req.user = sanitizeUser(user);
+    // Thử verify JWT và tìm user trong MongoDB
+    const userId = verifyToken(token);
+    if (userId) {
+      try {
+        const mongoUser = await User.findById(userId);
+        if (mongoUser) {
+          req.user = sanitizeUser(mongoUser);
+          req.token = token;
+          return next();
+        }
+      } catch {
+        // Nếu userId không phải ObjectId hợp lệ, fallback sang in-memory
+      }
+    }
+
+    // Fallback: in-memory store (legacy tokens)
+    const memUser = getUserByToken(token);
+    if (memUser) {
+      req.user = sanitizeUser(memUser);
       req.token = token;
     }
   }
