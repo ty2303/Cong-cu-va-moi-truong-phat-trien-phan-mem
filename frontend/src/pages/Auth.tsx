@@ -30,6 +30,11 @@ const isValidEmail = (email: string) => {
   return emailRegex.test(email);
 };
 
+const isValidUsername = (username: string) => {
+  const usernameRegex = /^[a-zA-Z0-9_]{3,30}$/;
+  return usernameRegex.test(username);
+};
+
 const getPasswordStrength = (
   password: string,
 ): { level: number; label: string; color: string } => {
@@ -87,6 +92,12 @@ export function Component() {
     setError('');
 
     if (!isLogin) {
+      if (!isValidUsername(username)) {
+        setError(
+          'Tên đăng nhập chỉ được chứa chữ cái, số và dấu gạch dưới, dài 3-30 ký tự',
+        );
+        return;
+      }
       if (!isValidEmail(email)) {
         setError('Vui lòng nhập địa chỉ email hợp lệ');
         return;
@@ -129,11 +140,22 @@ export function Component() {
       useWishlistStore.getState().fetch();
       navigate(user.role === 'ADMIN' ? '/admin' : '/');
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { message?: string } } };
-      setError(
-        axiosErr.response?.data?.message ??
-          'Đã có lỗi xảy ra, vui lòng thử lại',
-      );
+      const axiosErr = err as {
+        response?: {
+          data?: { message?: string; errors?: Record<string, string[]> };
+        };
+      };
+      const serverErrors = axiosErr.response?.data?.errors;
+      if (serverErrors) {
+        // Lấy thông báo lỗi đầu tiên từ errors object
+        const firstError = Object.values(serverErrors).flat()[0];
+        setError(firstError ?? axiosErr.response?.data?.message ?? 'Đã có lỗi xảy ra');
+      } else {
+        setError(
+          axiosErr.response?.data?.message ??
+            'Đã có lỗi xảy ra, vui lòng thử lại',
+        );
+      }
     } finally {
       setLoading(false);
     }
