@@ -9,6 +9,8 @@ export const authRouter = express.Router();
 authRouter.post("/login", async (req, res) => {
   const { username, password } = req.body;
   
+  console.log(`[AUTH] Login attempt for user: ${username}`);
+  
   if (!username || !password) {
     return res.status(400).json(fail("Thieu thong tin dang nhap", 400));
   }
@@ -21,6 +23,7 @@ authRouter.post("/login", async (req, res) => {
     }
 
     const token = issueToken(user._id.toString());
+    console.log(`[AUTH] Login successful for user: ${username}`);
     return res.json(ok({ token, ...sanitizeUser(user) }, "Dang nhap thanh cong"));
   } catch (error) {
     console.error("Login error:", error);
@@ -30,6 +33,8 @@ authRouter.post("/login", async (req, res) => {
 
 authRouter.post("/register", async (req, res) => {
   const { username, email, password } = req.body;
+  
+  console.log(`[AUTH] Register attempt for user: ${username}, email: ${email}`);
   
   if (!username || !email || !password) {
     return res.status(400).json(fail("Thieu thong tin dang ky", 400));
@@ -54,6 +59,7 @@ authRouter.post("/register", async (req, res) => {
     });
 
     const token = issueToken(user._id.toString());
+    console.log(`[AUTH] Register successful for user: ${username}`);
     return res.status(201).json(ok({ token, ...sanitizeUser(user) }, "Dang ky thanh cong", 201));
   } catch (error) {
     console.error("Register error:", error);
