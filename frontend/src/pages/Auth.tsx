@@ -1,6 +1,15 @@
-import { ArrowRight, Lock, Mail, Smartphone, User } from 'lucide-react';
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Mail,
+  Smartphone,
+  User,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import apiClient from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
@@ -22,10 +31,26 @@ export function Component() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isLoggedIn) {
+      navigate(isAdmin ? '/admin' : '/', { replace: true });
+    }
+  }, [isLoggedIn, isAdmin, navigate]);
+
+  // Clear error when switching tabs
+  useEffect(() => {
+    setError('');
+  }, [isLogin]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -33,6 +58,11 @@ export function Component() {
 
     if (!isLogin && password !== confirmPassword) {
       setError('Mật khẩu nhập lại không khớp');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Mật khẩu phải có ít nhất 6 ký tự');
       return;
     }
 
@@ -62,19 +92,30 @@ export function Component() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-80px)] items-center justify-center px-4 py-12 pt-24">
+    <div className="relative flex min-h-[calc(100vh-80px)] items-center justify-center overflow-hidden px-4 py-12 pt-24">
+      {/* Background decorations */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-brand-accent/5 blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-brand-subtle/60 blur-3xl" />
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
+        className="relative z-10 w-full max-w-md"
       >
         <div className="card overflow-hidden bg-surface p-8">
           {/* Header */}
           <div className="mb-8 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10">
+            <motion.div
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+              className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10"
+            >
               <Smartphone className="h-6 w-6 text-brand" />
-            </div>
+            </motion.div>
             <h1 className="font-display text-2xl font-bold text-text-primary">
               {isLogin ? 'Chào mừng trở lại' : 'Tạo tài khoản'}
             </h1>
@@ -131,6 +172,7 @@ export function Component() {
                   className="w-full rounded-lg border border-border bg-surface px-10 py-2.5 text-sm outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
                   placeholder="username123"
                   required
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -162,6 +204,7 @@ export function Component() {
                         className="w-full rounded-lg border border-border bg-surface px-10 py-2.5 text-sm outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
                         placeholder="email@example.com"
                         required
+                        autoComplete="email"
                       />
                     </div>
                   </div>
@@ -169,6 +212,7 @@ export function Component() {
               )}
             </AnimatePresence>
 
+            {/* Password */}
             <div className="space-y-1">
               <label
                 htmlFor="password"
@@ -180,16 +224,31 @@ export function Component() {
                 <Lock className="pointer-events-none absolute top-2.5 left-3 h-5 w-5 text-text-muted" />
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-surface px-10 py-2.5 text-sm outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
+                  className="w-full rounded-lg border border-border bg-surface py-2.5 pr-10 pl-10 text-sm outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
                   placeholder="••••••••"
                   required
+                  autoComplete={isLogin ? 'current-password' : 'new-password'}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute top-2.5 right-3 cursor-pointer text-text-muted transition-colors hover:text-text-secondary"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
               </div>
             </div>
 
+            {/* Confirm Password - only for register */}
             <AnimatePresence mode="popLayout">
               {!isLogin && (
                 <motion.div
@@ -210,19 +269,38 @@ export function Component() {
                       <Lock className="pointer-events-none absolute top-2.5 left-3 h-5 w-5 text-text-muted" />
                       <input
                         id="confirmPassword"
-                        type="password"
+                        type={showConfirmPassword ? 'text' : 'password'}
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full rounded-lg border border-border bg-surface px-10 py-2.5 text-sm outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
+                        className="w-full rounded-lg border border-border bg-surface py-2.5 pr-10 pl-10 text-sm outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
                         placeholder="••••••••"
                         required
+                        autoComplete="new-password"
                       />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowConfirmPassword(!showConfirmPassword)
+                        }
+                        className="absolute top-2.5 right-3 cursor-pointer text-text-muted transition-colors hover:text-text-secondary"
+                        tabIndex={-1}
+                        aria-label={
+                          showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-5 w-5" />
+                        ) : (
+                          <Eye className="h-5 w-5" />
+                        )}
+                      </button>
                     </div>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
+            {/* Remember me & Forgot password - only for login */}
             {isLogin && (
               <div className="flex items-center justify-between">
                 <label
@@ -245,23 +323,38 @@ export function Component() {
               </div>
             )}
 
-            {error && (
-              <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
-                {error}
-              </p>
-            )}
+            {/* Error message */}
+            <AnimatePresence mode="popLayout">
+              {error && (
+                <motion.p
+                  key="error-msg"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600"
+                >
+                  {error}
+                </motion.p>
+              )}
+            </AnimatePresence>
 
+            {/* Submit button */}
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary flex w-full cursor-pointer items-center justify-center gap-2 disabled:opacity-60"
+              className="btn-primary flex w-full cursor-pointer items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading
-                ? 'Đang xử lý...'
-                : isLogin
-                  ? 'Đăng nhập'
-                  : 'Tạo tài khoản'}
-              {!loading && <ArrowRight className="h-4 w-4" />}
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Đang xử lý...
+                </>
+              ) : (
+                <>
+                  {isLogin ? 'Đăng nhập' : 'Tạo tài khoản'}
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </button>
 
             {/* Social Login Divider */}
@@ -279,7 +372,8 @@ export function Component() {
             {/* Google Login Button */}
             <button
               type="button"
-              className="btn-outline flex w-full cursor-pointer items-center justify-center gap-2 transition-all hover:bg-surface-alt"
+              disabled={loading}
+              className="btn-outline flex w-full cursor-pointer items-center justify-center gap-2 transition-all hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => {
                 window.location.href = `${import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8080'}/oauth2/authorization/google`;
               }}
@@ -306,6 +400,18 @@ export function Component() {
             </button>
           </form>
         </div>
+
+        {/* Bottom hint text */}
+        <p className="mt-6 text-center text-xs text-text-muted">
+          {isLogin ? 'Chưa có tài khoản? ' : 'Đã có tài khoản? '}
+          <button
+            type="button"
+            onClick={() => setIsLogin(!isLogin)}
+            className="cursor-pointer font-medium text-brand hover:underline"
+          >
+            {isLogin ? 'Đăng ký ngay' : 'Đăng nhập'}
+          </button>
+        </p>
       </motion.div>
     </div>
   );
