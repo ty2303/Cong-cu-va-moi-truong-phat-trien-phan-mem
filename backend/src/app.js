@@ -46,11 +46,6 @@ app.use("/api/upload", uploadRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/momo", momoRouter);
 
-app.use((error, _req, res, _next) => {
-  console.error(error);
-  res.status(500).json(fail("Internal server error", 500));
-});
-
 app.use((_req, res) => {
   res.status(404).json(fail("Not found", 404));
 });

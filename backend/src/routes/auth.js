@@ -1,38 +1,38 @@
 import express from "express";
-import { getCollection, issueToken, sanitizeUser } from "../data/store.js";
+import { db, issueToken, sanitizeUser } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
 
 export const authRouter = express.Router();
 
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", (req, res) => {
   const { username, password } = req.body;
-  const users = await getCollection("users");
-  const user = await users.findOne({ username, password });
+  const user = db.users.find(
+    (item) => item.username === username && item.password === password
+  );
 
   if (!user) {
     return res.status(401).json(fail("Sai ten dang nhap hoac mat khau", 401));
   }
 
-  const token = await issueToken(user.id);
+  const token = issueToken(user.id);
   return res.json(ok({ token, ...sanitizeUser(user) }, "Dang nhap thanh cong"));
 });
 
-authRouter.post("/register", async (req, res) => {
+authRouter.post("/register", (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password) {
     return res.status(400).json(fail("Thieu thong tin dang ky", 400));
   }
 
-  const users = await getCollection("users");
-  const exists = await users.findOne({
-    $or: [{ username }, { email }]
-  });
+  const exists = db.users.some(
+    (user) => user.username === username || user.email === email
+  );
   if (exists) {
     return res.status(409).json(fail("Tai khoan da ton tai", 409));
   }
 
   const user = {
-    id: `user-${Date.now()}`,
+    id: `user-${db.users.length + 1}`,
     username,
     email,
     password,
@@ -42,8 +42,8 @@ authRouter.post("/register", async (req, res) => {
     createdAt: new Date().toISOString()
   };
 
-  await users.insertOne(user);
-  const token = await issueToken(user.id);
+  db.users.push(user);
+  const token = issueToken(user.id);
   return res.status(201).json(ok({ token, ...sanitizeUser(user) }, "Dang ky thanh cong", 201));
 });
 
