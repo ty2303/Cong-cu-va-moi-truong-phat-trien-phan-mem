@@ -149,7 +149,9 @@ export function Component() {
       if (serverErrors) {
         // Lấy thông báo lỗi đầu tiên từ errors object
         const firstError = Object.values(serverErrors).flat()[0];
-        setError(firstError ?? axiosErr.response?.data?.message ?? 'Đã có lỗi xảy ra');
+        setError(
+          firstError ?? axiosErr.response?.data?.message ?? 'Đã có lỗi xảy ra',
+        );
       } else {
         setError(
           axiosErr.response?.data?.message ??
