@@ -21,4 +21,8 @@ export async function connectDB() {
   }
 }
 
+export function isDatabaseReady() {
+  return mongoose.connection.readyState === 1;
+}
+
 export default mongoose;

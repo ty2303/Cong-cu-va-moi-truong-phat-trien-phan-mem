@@ -1,4 +1,6 @@
 import express from "express";
+import { isDatabaseReady } from "../data/mongodb.js";
+import { db, withCategory } from "../data/store.js";
 import { ok } from "../lib/apiResponse.js";
 import { serializeProduct } from "../lib/catalogSerializers.js";
 import { Category } from "../models/Category.js";
@@ -11,12 +13,42 @@ export const wishlistRouter = express.Router();
 wishlistRouter.use(requireAuth);
 
 wishlistRouter.get("/", async (req, res) => {
+  if (!isDatabaseReady()) {
+    const ids = db.wishlists[req.user.id] ?? [];
+    const items = ids
+      .map((id) => db.products.find((product) => product.id === id))
+      .filter(Boolean)
+      .map((product) => {
+        const enriched = withCategory(product);
+        return serializeProduct({ _id: product.id, ...enriched }, enriched.categoryName);
+      });
+    return res.json(ok(items));
+  }
+
   const wishlist = await Wishlist.findOne({ userId: req.user.id }).lean();
   const items = await getWishlistProducts(wishlist?.productIds ?? []);
   res.json(ok(items));
 });
 
 wishlistRouter.post("/:productId", async (req, res) => {
+  if (!isDatabaseReady()) {
+    const ids = new Set(db.wishlists[req.user.id] ?? []);
+    if (ids.has(req.params.productId)) {
+      ids.delete(req.params.productId);
+    } else {
+      ids.add(req.params.productId);
+    }
+    db.wishlists[req.user.id] = [...ids];
+    const items = db.wishlists[req.user.id]
+      .map((id) => db.products.find((product) => product.id === id))
+      .filter(Boolean)
+      .map((product) => {
+        const enriched = withCategory(product);
+        return serializeProduct({ _id: product.id, ...enriched }, enriched.categoryName);
+      });
+    return res.json(ok(items));
+  }
+
   const wishlist = await Wishlist.findOne({ userId: req.user.id });
   const nextIds = new Set(wishlist?.productIds ?? []);
 
@@ -41,6 +73,11 @@ wishlistRouter.post("/:productId", async (req, res) => {
 });
 
 wishlistRouter.delete("/", async (req, res) => {
+  if (!isDatabaseReady()) {
+    db.wishlists[req.user.id] = [];
+    return res.json(ok(null, "Da xoa wishlist"));
+  }
+
   await Wishlist.findOneAndUpdate(
     { userId: req.user.id },
     {
