@@ -10,11 +10,13 @@ import type { Product } from '@/types/product';
 interface WishlistState {
   items: Product[];
   isLoading: boolean;
+  error: string | null;
   toggle: (product: Product) => Promise<void>;
   has: (id: string) => boolean;
   fetch: () => Promise<void>;
   clear: () => Promise<void>;
   clearLocal: () => void;
+  reset: () => void;
 }
 
 export const useWishlistStore = create<WishlistState>()(
@@ -22,6 +24,7 @@ export const useWishlistStore = create<WishlistState>()(
     (set, get) => ({
       items: [],
       isLoading: false,
+      error: null,
 
       toggle: async (product) => {
         const { isLoggedIn } = useAuthStore.getState();
@@ -30,6 +33,7 @@ export const useWishlistStore = create<WishlistState>()(
 
         // Optimistic update
         set({
+          error: null,
           items: exists
             ? prevItems.filter((p) => p.id !== product.id)
             : [...prevItems, product],
@@ -41,25 +45,31 @@ export const useWishlistStore = create<WishlistState>()(
           const res = await apiClient.post<ApiResponse<Product[]>>(
             ENDPOINTS.WISHLIST.TOGGLE(product.id),
           );
-          set({ items: res.data.data });
+          set({ items: res.data.data, error: null });
         } catch {
           // Revert on error
-          set({ items: prevItems });
+          set({
+            items: prevItems,
+            error: 'Khong the cap nhat wishlist luc nay.',
+          });
         }
       },
 
       has: (id) => get().items.some((p) => p.id === id),
 
       fetch: async () => {
-        if (!useAuthStore.getState().isLoggedIn) return;
-        set({ isLoading: true });
+        if (!useAuthStore.getState().isLoggedIn) {
+          set({ isLoading: false, error: null });
+          return;
+        }
+        set({ isLoading: true, error: null });
         try {
           const res = await apiClient.get<ApiResponse<Product[]>>(
             ENDPOINTS.WISHLIST.BASE,
           );
-          set({ items: res.data.data });
+          set({ items: res.data.data, error: null });
         } catch {
-          // ignore fetch errors silently
+          set({ error: 'Khong the tai wishlist tu he thong.' });
         } finally {
           set({ isLoading: false });
         }
@@ -67,16 +77,21 @@ export const useWishlistStore = create<WishlistState>()(
 
       clear: async () => {
         const { isLoggedIn } = useAuthStore.getState();
-        set({ items: [] });
+        const prevItems = get().items;
+        set({ items: [], error: null });
         if (!isLoggedIn) return;
         try {
           await apiClient.delete(ENDPOINTS.WISHLIST.BASE);
         } catch {
-          // local already cleared, no revert needed
+          set({
+            items: prevItems,
+            error: 'Khong the xoa wishlist luc nay.',
+          });
         }
       },
 
-      clearLocal: () => set({ items: [] }),
+      clearLocal: () => set({ items: [], error: null }),
+      reset: () => set({ items: [], isLoading: false, error: null }),
     }),
     {
       name: 'nebula-wishlist',
