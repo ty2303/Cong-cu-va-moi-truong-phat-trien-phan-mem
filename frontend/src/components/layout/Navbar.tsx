@@ -12,10 +12,9 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
-
+import { useAuthStore } from '@/store/useAuthStore';
 import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
-import { useAuthStore } from '@/store/useAuthStore';
 
 const navLinks = [
   { label: 'Trang chủ', href: '/' },
@@ -103,6 +102,7 @@ export default function Navbar() {
   const searchFormKey = `${location.pathname}-${location.search}`;
 
   const handleLogout = () => {
+    useCartStore.getState().clearLocal();
     logout();
     navigate('/login');
   };

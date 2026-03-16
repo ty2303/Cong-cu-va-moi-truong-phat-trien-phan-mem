@@ -13,6 +13,7 @@ import { reviewsRouter } from "./routes/reviews.js";
 import { uploadRouter } from "./routes/upload.js";
 import { usersRouter } from "./routes/users.js";
 import { wishlistRouter } from "./routes/wishlist.js";
+import { cartRouter } from "./routes/cart.js";
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ app.use("/api/products", productsRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/wishlist", wishlistRouter);
+app.use("/api/cart", cartRouter);
 app.use("/api/reviews", reviewsRouter);
 app.use("/api/upload", uploadRouter);
 app.use("/api/users", usersRouter);
