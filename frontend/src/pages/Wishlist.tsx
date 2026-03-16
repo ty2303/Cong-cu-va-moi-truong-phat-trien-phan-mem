@@ -4,19 +4,22 @@ import { useEffect } from 'react';
 import { Link } from 'react-router';
 
 import ProductCard from '@/components/ui/ProductCard';
+import { useAuthStore } from '@/store/useAuthStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
 
 export const Component = Wishlist;
 
 function Wishlist() {
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const items = useWishlistStore((s) => s.items);
   const clear = useWishlistStore((s) => s.clear);
+  const error = useWishlistStore((s) => s.error);
   const fetch = useWishlistStore((s) => s.fetch);
   const isLoading = useWishlistStore((s) => s.isLoading);
 
   useEffect(() => {
-    fetch();
-  }, [fetch]);
+    void fetch();
+  }, [fetch, isLoggedIn]);
 
   if (isLoading) {
     return (
@@ -44,7 +47,7 @@ function Wishlist() {
         {items.length > 0 && (
           <button
             type="button"
-            onClick={() => clear()}
+            onClick={() => void clear()}
             className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted transition-colors hover:border-red-500 hover:text-red-500"
           >
             <Trash2 className="h-4 w-4" />
@@ -52,6 +55,12 @@ function Wishlist() {
           </button>
         )}
       </div>
+
+      {error && (
+        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
       {/* Content */}
       {items.length === 0 ? (

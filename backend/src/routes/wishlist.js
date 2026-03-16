@@ -1,7 +1,7 @@
 import express from "express";
 import { isDatabaseReady } from "../data/mongodb.js";
 import { db, withCategory } from "../data/store.js";
-import { ok } from "../lib/apiResponse.js";
+import { fail, ok } from "../lib/apiResponse.js";
 import { serializeProduct } from "../lib/catalogSerializers.js";
 import { Category } from "../models/Category.js";
 import { Product } from "../models/Product.js";
@@ -31,12 +31,21 @@ wishlistRouter.get("/", async (req, res) => {
 });
 
 wishlistRouter.post("/:productId", async (req, res) => {
+  const productId = req.params.productId;
+  const productExists = isDatabaseReady()
+    ? await Product.exists({ _id: productId })
+    : db.products.some((product) => product.id === productId);
+
+  if (!productExists) {
+    return res.status(404).json(fail("San pham khong ton tai", 404));
+  }
+
   if (!isDatabaseReady()) {
     const ids = new Set(db.wishlists[req.user.id] ?? []);
-    if (ids.has(req.params.productId)) {
-      ids.delete(req.params.productId);
+    if (ids.has(productId)) {
+      ids.delete(productId);
     } else {
-      ids.add(req.params.productId);
+      ids.add(productId);
     }
     db.wishlists[req.user.id] = [...ids];
     const items = db.wishlists[req.user.id]
@@ -52,10 +61,10 @@ wishlistRouter.post("/:productId", async (req, res) => {
   const wishlist = await Wishlist.findOne({ userId: req.user.id });
   const nextIds = new Set(wishlist?.productIds ?? []);
 
-  if (nextIds.has(req.params.productId)) {
-    nextIds.delete(req.params.productId);
+  if (nextIds.has(productId)) {
+    nextIds.delete(productId);
   } else {
-    nextIds.add(req.params.productId);
+    nextIds.add(productId);
   }
 
   await Wishlist.findOneAndUpdate(
