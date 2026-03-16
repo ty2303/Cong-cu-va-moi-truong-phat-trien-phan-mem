@@ -173,7 +173,9 @@ function Cart() {
                           onClick={() =>
                             updateQuantity(product.id, quantity + 1)
                           }
-                          disabled={quantity >= MAX_QUANTITY}
+                          disabled={
+                            quantity >= Math.min(MAX_QUANTITY, product.stock)
+                          }
                           className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
                           aria-label="Tăng số lượng"
                         >
