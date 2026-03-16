@@ -93,7 +93,11 @@ describe('useWishlistStore', () => {
       isLoggedIn: true,
       isAdmin: false,
     });
-    useWishlistStore.setState({ items: [product], isLoading: false, error: null });
+    useWishlistStore.setState({
+      items: [product],
+      isLoading: false,
+      error: null,
+    });
     apiClientMock.delete.mockRejectedValueOnce(new Error('Delete failed'));
 
     await useWishlistStore.getState().clear();
