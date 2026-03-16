@@ -11,7 +11,7 @@ export const featuredProducts: Product[] = [
       'https://store.storeimages.cdn-apple.com/4982/as-images.apple.com/is/iphone-16-pro-hero-desert-702702_AV1?wid=940&hei=1112&fmt=png-alpha',
     rating: 4.9,
     stock: 24,
-    badge: 'Hot',
+    badge: 'Nổi bật',
     specs: '256GB · Titanium · A18 Pro',
   },
   {
@@ -24,7 +24,7 @@ export const featuredProducts: Product[] = [
       'https://images.samsung.com/is/image/samsung/p6pim/vn/2501/gallery/vn-galaxy-s25-ultra-coldsnap-titanium-471198-sm-s938blbdxxv-544691988?$650_519_PNG$',
     rating: 4.8,
     stock: 18,
-    badge: 'New',
+    badge: 'Mới',
     specs: '256GB · Titanium · Snapdragon 8 Elite',
   },
   {
@@ -48,7 +48,7 @@ export const featuredProducts: Product[] = [
       'https://i02.appmifile.com/images/2025/03/14/c67e6fac-f2ef-4406-aa96-b914449751f0.png',
     rating: 4.6,
     stock: 15,
-    badge: 'Sale',
+    badge: 'Giảm giá',
     specs: '512GB · Leica Camera · Snapdragon 8 Elite',
   },
   {
@@ -72,7 +72,7 @@ export const featuredProducts: Product[] = [
       'https://nothing.tech/cdn/shop/files/Phone_2a_Plus_Gray_Front.png?v=1721628090&width=800',
     rating: 4.4,
     stock: 30,
-    badge: 'Trending',
+    badge: 'Xu hướng',
     specs: '256GB · Glyph Interface · Snapdragon 8s Gen 4',
   },
   {
@@ -97,7 +97,7 @@ export const featuredProducts: Product[] = [
       'https://images.samsung.com/is/image/samsung/p6pim/vn/2501/gallery/vn-galaxy-a56-5g-sm-a566-sm-a566elbdxxv-544048507?$650_519_PNG$',
     rating: 4.3,
     stock: 36,
-    badge: 'Best Seller',
+    badge: 'Bán chạy',
     specs: '128GB · Exynos 1580 · OIS Camera',
   },
 ];
@@ -124,7 +124,7 @@ export const allProducts: Product[] = [
     image: 'https://image01.realme.net/general/20241120/1732077616673.png',
     rating: 4.4,
     stock: 29,
-    badge: 'Value',
+    badge: 'Giá tốt',
     specs: '256GB · Snapdragon 8 Elite · IP69',
   },
   {

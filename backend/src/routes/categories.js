@@ -1,44 +1,61 @@
 import express from "express";
-import { db } from "../data/store.js";
-import { ok } from "../lib/apiResponse.js";
+import { fail, ok } from "../lib/apiResponse.js";
+import { serializeCategory } from "../lib/catalogSerializers.js";
+import { Category } from "../models/Category.js";
+import { Product } from "../models/Product.js";
 import { requireAdmin } from "../middleware/auth.js";
 
 export const categoriesRouter = express.Router();
 
-function enrich(category) {
-  return {
-    ...category,
-    productCount: db.products.filter((item) => item.categoryId === category.id).length
-  };
-}
+categoriesRouter.get("/", async (_req, res) => {
+  const [categories, counts] = await Promise.all([
+    Category.find().sort({ name: 1 }).lean(),
+    Product.aggregate([{ $group: { _id: "$categoryId", productCount: { $sum: 1 } } }])
+  ]);
 
-categoriesRouter.get("/", (_req, res) => {
-  res.json(ok(db.categories.map(enrich)));
+  const countMap = new Map(counts.map((item) => [item._id, item.productCount]));
+
+  res.json(ok(categories.map((category) => serializeCategory(category, countMap.get(category._id) ?? 0))));
 });
 
-categoriesRouter.post("/", requireAdmin, (req, res) => {
-  const category = {
-    id: `cat-${Date.now()}`,
+categoriesRouter.post("/", requireAdmin, async (req, res) => {
+  const category = await Category.create({
+    _id: `cat-${Date.now()}`,
     name: req.body.name,
-    slug: String(req.body.name || "").toLowerCase().replace(/\s+/g, "-"),
+    slug: String(req.body.name || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-"),
     description: req.body.description ?? "",
     icon: req.body.icon ?? "Smartphone",
-    createdAt: new Date().toISOString()
-  };
-  db.categories.push(category);
-  res.status(201).json(ok(enrich(category), "Tao danh muc thanh cong", 201));
+    createdAt: new Date()
+  });
+
+  res.status(201).json(ok(serializeCategory(category.toObject(), 0), "Tao danh muc thanh cong", 201));
 });
 
-categoriesRouter.put("/:id", requireAdmin, (req, res) => {
-  const category = db.categories.find((item) => item.id === req.params.id);
-  Object.assign(category, req.body);
-  res.json(ok(enrich(category)));
-});
+categoriesRouter.put("/:id", requireAdmin, async (req, res) => {
+  const updates = { ...req.body };
 
-categoriesRouter.delete("/:id", requireAdmin, (req, res) => {
-  const index = db.categories.findIndex((item) => item.id === req.params.id);
-  if (index >= 0) {
-    db.categories.splice(index, 1);
+  if (req.body.name && !req.body.slug) {
+    updates.slug = String(req.body.name).trim().toLowerCase().replace(/\s+/g, "-");
   }
+
+  const category = await Category.findByIdAndUpdate(req.params.id, updates, {
+    new: true,
+    runValidators: true
+  }).lean();
+
+  if (!category) {
+    return res.status(404).json(fail("Khong tim thay danh muc", 404));
+  }
+
+  const productCount = await Product.countDocuments({ categoryId: req.params.id });
+
+  res.json(ok(serializeCategory(category, productCount)));
+});
+
+categoriesRouter.delete("/:id", requireAdmin, async (req, res) => {
+  await Category.findByIdAndDelete(req.params.id);
   res.json(ok(null, "Xoa danh muc thanh cong"));
 });
