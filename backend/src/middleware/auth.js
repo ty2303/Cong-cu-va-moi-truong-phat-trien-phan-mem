@@ -13,30 +13,36 @@ export async function attachUser(req, _res, next) {
     : null;
 
   if (token) {
-    // Thử verify JWT và tìm user trong MongoDB
-    const userId = verifyToken(token);
-    if (userId) {
-      try {
-        const mongoUser = await User.findById(userId);
-        if (mongoUser) {
-          req.user = sanitizeUser(mongoUser);
-          req.token = token;
-          return next();
-        }
-      } catch {
-        // Nếu userId không phải ObjectId hợp lệ, fallback sang in-memory
-      }
-    }
-
-    // Fallback: in-memory store (legacy tokens)
-    const memUser = getUserByToken(token);
-    if (memUser) {
-      req.user = sanitizeUser(memUser);
+    const user = await resolveUserFromToken(token);
+    if (user) {
+      req.user = user;
       req.token = token;
+      return next();
     }
   }
 
   next();
+}
+
+export async function resolveUserFromToken(token) {
+  if (!token) {
+    return null;
+  }
+
+  const userId = verifyToken(token);
+  if (userId) {
+    try {
+      const mongoUser = await User.findById(userId);
+      if (mongoUser) {
+        return sanitizeUser(mongoUser);
+      }
+    } catch {
+      // Nếu userId không phải ObjectId hợp lệ, fallback sang in-memory
+    }
+  }
+
+  const memUser = getUserByToken(token);
+  return memUser ? sanitizeUser(memUser) : null;
 }
 
 export function requireAuth(req, res, next) {

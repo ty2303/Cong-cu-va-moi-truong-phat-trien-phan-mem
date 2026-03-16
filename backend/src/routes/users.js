@@ -2,6 +2,7 @@ import express from "express";
 import { User } from "../models/User.js";
 import { db, paginate, sanitizeUser } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
+import { sendToUser } from "../lib/realtime.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 
 export const usersRouter = express.Router();
@@ -164,6 +165,10 @@ usersRouter.patch("/:id/role", requireAdmin, async (req, res) => {
     if (mongoUser) {
       mongoUser.role = newRole;
       await mongoUser.save();
+      sendToUser(mongoUser._id.toString(), "/user/queue/role-change", {
+        userId: mongoUser._id.toString(),
+        newRole
+      });
       return res.json(ok(sanitizeUser(mongoUser), "Cập nhật vai trò thành công"));
     }
   } catch {
@@ -176,5 +181,9 @@ usersRouter.patch("/:id/role", requireAdmin, async (req, res) => {
     return res.status(404).json(fail("Không tìm thấy người dùng", 404));
   }
   user.role = newRole;
+  sendToUser(user.id, "/user/queue/role-change", {
+    userId: user.id,
+    newRole
+  });
   res.json(ok(sanitizeUser(user), "Cập nhật vai trò thành công"));
 });
