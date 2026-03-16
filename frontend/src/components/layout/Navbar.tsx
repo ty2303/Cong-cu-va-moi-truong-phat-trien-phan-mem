@@ -2,6 +2,7 @@ import {
   Heart,
   LogOut,
   Menu,
+  Search,
   ShieldCheck,
   ShoppingCart,
   Smartphone,
@@ -10,7 +11,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 
 import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
@@ -22,16 +23,103 @@ const navLinks = [
   { label: 'Về chúng tôi', href: '/about' },
 ];
 
+function ProductSearchForm({
+  initialQuery,
+  onSubmit,
+  mobile = false,
+}: {
+  initialQuery: string;
+  onSubmit: (query: string) => void;
+  mobile?: boolean;
+}) {
+  const [query, setQuery] = useState(initialQuery);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(query);
+      }}
+      className={
+        mobile
+          ? 'rounded-2xl border border-border bg-surface-alt p-3'
+          : 'hidden items-center gap-2 rounded-full border border-border bg-surface-alt px-3 py-2 lg:flex'
+      }
+      role="search"
+    >
+      <div className="flex items-center gap-2">
+        <Search className="h-4 w-4 text-text-muted" />
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={
+            mobile
+              ? 'Tìm sản phẩm bạn cần...'
+              : 'Tìm iPhone, Samsung, camera...'
+          }
+          className={
+            mobile
+              ? 'min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted'
+              : 'w-56 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted'
+          }
+          aria-label="Tìm kiếm sản phẩm"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            className="cursor-pointer rounded-full p-1 text-text-muted transition-colors hover:bg-surface hover:text-brand"
+            aria-label="Xóa từ khóa tìm kiếm"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      <button
+        type="submit"
+        className={
+          mobile
+            ? 'mt-3 w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent'
+            : 'cursor-pointer rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand-accent'
+        }
+      >
+        {mobile ? 'Tìm sản phẩm' : 'Tìm'}
+      </button>
+    </form>
+  );
+}
+
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const wishlistCount = useWishlistStore((s) => s.items.length);
   const cartCount = useCartStore((s) => s.totalItems());
   const { isLoggedIn, isAdmin, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const currentSearchQuery =
+    new URLSearchParams(location.search).get('q')?.trim() ?? '';
+  const searchFormKey = `${location.pathname}-${location.search}`;
 
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const submitProductSearch = (query: string, closeMobileMenu = false) => {
+    const normalizedQuery = query.trim();
+
+    if (closeMobileMenu) {
+      setMobileOpen(false);
+    }
+
+    navigate({
+      pathname: '/products',
+      search: normalizedQuery
+        ? `?q=${encodeURIComponent(normalizedQuery)}`
+        : '',
+    });
   };
 
   return (
@@ -68,6 +156,14 @@ export default function Navbar() {
 
         {/* Actions */}
         <div className="flex items-center gap-3">
+          {!isAdmin && (
+            <ProductSearchForm
+              key={`desktop-${searchFormKey}`}
+              initialQuery={currentSearchQuery}
+              onSubmit={(query) => submitProductSearch(query)}
+            />
+          )}
+
           {/* Wishlist */}
           <Link
             to="/wishlist"
@@ -175,6 +271,17 @@ export default function Navbar() {
             className="overflow-hidden border-t border-border md:hidden"
           >
             <ul className="flex flex-col gap-1 px-6 py-4">
+              {!isAdmin && (
+                <li className="mb-3">
+                  <ProductSearchForm
+                    key={`mobile-${searchFormKey}`}
+                    initialQuery={currentSearchQuery}
+                    onSubmit={(query) => submitProductSearch(query, true)}
+                    mobile
+                  />
+                </li>
+              )}
+
               {navLinks.map((link) => (
                 <li key={link.href}>
                   <Link
