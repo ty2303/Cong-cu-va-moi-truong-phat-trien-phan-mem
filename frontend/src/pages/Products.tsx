@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router';
 
 import apiClient from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
@@ -21,6 +22,7 @@ import type { Category, Product } from '@/types/product';
 
 const ALL_BRANDS = 'Tất cả';
 const PRODUCTS_PER_PAGE = 8;
+const SEARCH_SUGGESTION_LIMIT = 8;
 
 type SortOption =
   | 'featured'
@@ -80,13 +82,15 @@ function ProductCardSkeleton({ index }: { index: number }) {
 }
 
 export function Component() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [search, setSearch] = useState('');
+  const searchFromUrl = searchParams.get('q')?.trim() ?? '';
+  const [search, setSearch] = useState(searchFromUrl);
   const [selectedBrand, setSelectedBrand] = useState(ALL_BRANDS);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('featured');
@@ -124,6 +128,30 @@ export function Component() {
     void fetchCatalog();
   }, [reloadKey]);
 
+  useEffect(() => {
+    if (searchFromUrl !== search) {
+      setSearch(searchFromUrl);
+    }
+  }, [search, searchFromUrl]);
+
+  useEffect(() => {
+    const normalizedSearch = search.trim();
+
+    if (normalizedSearch === searchFromUrl) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (normalizedSearch) {
+      nextParams.set('q', normalizedSearch);
+    } else {
+      nextParams.delete('q');
+    }
+
+    setSearchParams(nextParams, { replace: true });
+  }, [search, searchFromUrl, searchParams, setSearchParams]);
+
   const brands = useMemo(
     () =>
       [
@@ -140,8 +168,10 @@ export function Component() {
     [categories, selectedCategory],
   );
 
+  const searchTerm = search.trim();
+
   const filteredProducts = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const normalizedSearch = searchTerm.toLowerCase();
 
     let result = [...products];
 
@@ -227,7 +257,32 @@ export function Component() {
     }
 
     return result;
-  }, [availability, products, search, selectedBrand, selectedCategory, sortBy]);
+  }, [
+    availability,
+    products,
+    searchTerm,
+    selectedBrand,
+    selectedCategory,
+    sortBy,
+  ]);
+
+  const searchSuggestions = useMemo(() => {
+    const candidateTerms = [
+      ...categories.map((category) => category.name),
+      ...brands.filter((brand) => brand !== ALL_BRANDS),
+      ...products
+        .map((product) => product.badge?.trim())
+        .filter((badge): badge is string => Boolean(badge)),
+    ];
+
+    return Array.from(new Set(candidateTerms))
+      .filter(
+        (term) =>
+          term.trim() &&
+          term.toLocaleLowerCase('vi') !== searchTerm.toLocaleLowerCase('vi'),
+      )
+      .slice(0, SEARCH_SUGGESTION_LIMIT);
+  }, [brands, categories, products, searchTerm]);
 
   const totalPages = Math.max(
     1,
@@ -291,6 +346,10 @@ export function Component() {
     currentPage * PRODUCTS_PER_PAGE,
     filteredProducts.length,
   );
+
+  const searchResultLabel = searchTerm
+    ? `Kết quả cho "${searchTerm}"`
+    : 'Tìm nhanh theo tên, thương hiệu hoặc cấu hình';
 
   return (
     <div className="min-h-screen overflow-hidden bg-surface pt-24 pb-16">
@@ -417,6 +476,40 @@ export function Component() {
           className="rounded-[1.75rem] border border-border bg-surface p-5 shadow-[0_18px_48px_rgba(15,23,42,0.05)]"
         >
           <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 rounded-[1.5rem] border border-border bg-surface-alt/70 p-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">
+                  Tìm kiếm sản phẩm
+                </p>
+                <h2 className="mt-2 font-display text-2xl font-bold text-brand">
+                  {searchResultLabel}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-text-secondary">
+                  Gõ từ khóa rồi kết hợp bộ lọc để thu hẹp nhanh danh sách hiển
+                  thị từ backend.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border bg-surface px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-text-muted">
+                    Kết quả phù hợp
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-text-primary">
+                    {filteredProducts.length} sản phẩm
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border bg-surface px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-text-muted">
+                    Từ khóa hiện tại
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-text-primary">
+                    {searchTerm || 'Chưa nhập'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative flex-1">
                 <Search className="absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-text-muted" />
@@ -558,6 +651,51 @@ export function Component() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            <div className="rounded-2xl border border-border bg-surface-alt/80 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted">
+                    Gợi ý tìm nhanh
+                  </p>
+                  <p className="mt-2 text-sm text-text-secondary">
+                    Chạm vào một từ khóa để áp dụng ngay trên danh sách sản
+                    phẩm.
+                  </p>
+                </div>
+
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    className="inline-flex cursor-pointer items-center gap-2 self-start rounded-full border border-border bg-surface px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-brand hover:text-brand lg:self-auto"
+                  >
+                    <X className="h-4 w-4" />
+                    Xóa từ khóa
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {searchSuggestions.length > 0 ? (
+                  searchSuggestions.map((term) => (
+                    <button
+                      key={term}
+                      type="button"
+                      onClick={() => setSearch(term)}
+                      className="cursor-pointer rounded-full border border-border bg-surface px-4 py-2 text-sm font-medium text-text-secondary transition-all hover:border-brand hover:text-brand"
+                    >
+                      {term}
+                    </button>
+                  ))
+                ) : (
+                  <span className="text-sm text-text-muted">
+                    Gợi ý sẽ xuất hiện khi hệ thống tải xong danh mục và thương
+                    hiệu.
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         </motion.section>
 
@@ -575,6 +713,7 @@ export function Component() {
               {selectedBrand !== ALL_BRANDS
                 ? ` • Thương hiệu: ${selectedBrand}`
                 : ''}
+              {searchTerm ? ` • Từ khóa: ${searchTerm}` : ''}
             </p>
           </div>
 
@@ -582,7 +721,7 @@ export function Component() {
             {search.trim() && (
               <span className="inline-flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-text-secondary">
                 <Search className="h-3.5 w-3.5" />
-                {search.trim()}
+                {searchTerm}
               </span>
             )}
             {selectedBrand !== ALL_BRANDS && (
@@ -710,8 +849,9 @@ export function Component() {
                 Không tìm thấy sản phẩm phù hợp
               </h2>
               <p className="mt-3 text-sm leading-6 text-text-secondary">
-                Thử đổi từ khóa, bỏ bớt bộ lọc hoặc quay về toàn bộ danh mục để
-                xem thêm sản phẩm khác.
+                {searchTerm
+                  ? `Không có sản phẩm nào khớp với từ khóa "${searchTerm}". Hãy thử đổi cách gõ hoặc bỏ bớt bộ lọc đang áp dụng.`
+                  : 'Thử đổi từ khóa, bỏ bớt bộ lọc hoặc quay về toàn bộ danh mục để xem thêm sản phẩm khác.'}
               </p>
               <button
                 type="button"

@@ -15,6 +15,7 @@ interface AuthState {
   isAdmin: boolean;
   login: (token: string, user: AuthUser) => void;
   logout: () => void;
+  syncUser: (user: AuthUser) => void;
   syncRole: (role: 'USER' | 'ADMIN') => void;
 }
 
@@ -37,6 +38,14 @@ export const useAuthStore = create<AuthState>()(
       logout: () => {
         set({ token: null, user: null, isLoggedIn: false, isAdmin: false });
       },
+
+      syncUser: (user) =>
+        set((state) => ({
+          token: state.token,
+          user,
+          isLoggedIn: Boolean(state.token),
+          isAdmin: user.role === 'ADMIN',
+        })),
 
       syncRole: (role) =>
         set((state) => ({

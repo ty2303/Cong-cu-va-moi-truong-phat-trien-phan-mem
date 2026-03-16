@@ -76,11 +76,11 @@ export default function ProductCard({ product, index = 0 }: ProductCardProps) {
         )}
 
         {/* Image */}
-        <div className="relative flex items-center justify-center overflow-hidden bg-surface-alt p-6 pt-8">
+        <div className="relative flex min-h-[16rem] items-center justify-center overflow-hidden bg-surface-alt p-6 pt-8">
           <motion.img
             src={product.image}
             alt={product.name}
-            className="h-48 w-auto object-contain transition-transform duration-500 group-hover:scale-110"
+            className="h-48 max-w-full object-contain transition-transform duration-500 group-hover:scale-110"
             whileHover={{ rotateY: 8 }}
           />
         </div>
