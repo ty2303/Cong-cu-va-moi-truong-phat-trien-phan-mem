@@ -1,56 +1,176 @@
 import express from "express";
-import { db, issueToken, sanitizeUser } from "../data/store.js";
+import { User } from "../models/User.js";
+import { issueToken, sanitizeUser } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
 
 export const authRouter = express.Router();
 
-authRouter.post("/login", (req, res) => {
+/**
+ * POST /api/auth/login
+ * Đăng nhập bằng username + password.
+ * - Tìm user theo username trong MongoDB
+ * - So sánh password bằng bcrypt (comparePassword)
+ * - Trả về JWT token + thông tin user
+ */
+authRouter.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  const user = db.users.find(
-    (item) => item.username === username && item.password === password
-  );
 
-  if (!user) {
-    return res.status(401).json(fail("Sai ten dang nhap hoac mat khau", 401));
+  console.log(`[AUTH] Login attempt for user: ${username}`);
+
+  // Validate input
+  if (!username || !password) {
+    return res.status(400).json(fail("Vui lòng nhập tên đăng nhập và mật khẩu", 400));
   }
 
-  const token = issueToken(user.id);
-  return res.json(ok({ token, ...sanitizeUser(user) }, "Dang nhap thanh cong"));
+  try {
+    // Tìm user theo username (không lọc theo password nữa)
+    const user = await User.findOne({ username, authProvider: "LOCAL" });
+
+    if (!user) {
+      return res.status(401).json(fail("Sai tên đăng nhập hoặc mật khẩu", 401));
+    }
+
+    // So sánh password bằng bcrypt
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json(fail("Sai tên đăng nhập hoặc mật khẩu", 401));
+    }
+
+    // Tạo JWT token
+    const token = issueToken(user._id.toString());
+
+    console.log(`[AUTH] Login successful for user: ${username}`);
+    return res.json(ok({ token, ...sanitizeUser(user) }, "Đăng nhập thành công"));
+  } catch (error) {
+    console.error("Login error:", error);
+    return res.status(500).json(fail("Lỗi server", 500));
+  }
 });
 
-authRouter.post("/register", (req, res) => {
-  const { username, email, password } = req.body;
-  if (!username || !email || !password) {
-    return res.status(400).json(fail("Thieu thong tin dang ky", 400));
+/**
+ * POST /api/auth/register
+ * Đăng ký tài khoản mới.
+ * - Validate input (username, email, password)
+ * - Kiểm tra trùng username/email
+ * - Hash password tự động qua pre-save hook
+ * - Trả về JWT token + thông tin user
+ */
+authRouter.post("/register", async (req, res) => {
+  const rawUsername = req.body.username;
+  const rawEmail = req.body.email;
+  const { password } = req.body;
+
+  // Trim input
+  const username = typeof rawUsername === "string" ? rawUsername.trim() : "";
+  const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+
+  console.log(`[AUTH] Register attempt for user: ${username}, email: ${email}`);
+
+  // --- Validate input ---
+  const errors = {};
+
+  // Kiểm tra trường bắt buộc
+  if (!username) errors.username = ["Vui lòng nhập tên đăng nhập"];
+  if (!email) errors.email = ["Vui lòng nhập email"];
+  if (!password) errors.password = ["Vui lòng nhập mật khẩu"];
+
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json(fail("Vui lòng nhập đầy đủ thông tin đăng ký", 400, errors));
   }
 
-  const exists = db.users.some(
-    (user) => user.username === username || user.email === email
-  );
-  if (exists) {
-    return res.status(409).json(fail("Tai khoan da ton tai", 409));
+  // Validate username format: chỉ chữ cái, số, gạch dưới, 3-30 ký tự
+  const usernameRegex = /^[a-zA-Z0-9_]{3,30}$/;
+  if (!usernameRegex.test(username)) {
+    return res.status(400).json(
+      fail(
+        "Tên đăng nhập chỉ được chứa chữ cái, số và dấu gạch dưới, dài 3-30 ký tự",
+        400,
+        { username: ["Tên đăng nhập chỉ được chứa chữ cái, số và dấu gạch dưới, dài 3-30 ký tự"] }
+      )
+    );
   }
 
-  const user = {
-    id: `user-${db.users.length + 1}`,
-    username,
-    email,
-    password,
-    role: "USER",
-    hasPassword: true,
-    authProvider: "LOCAL",
-    createdAt: new Date().toISOString()
-  };
+  // Validate password length
+  if (password.length < 6) {
+    return res.status(400).json(
+      fail("Mật khẩu phải có ít nhất 6 ký tự", 400, {
+        password: ["Mật khẩu phải có ít nhất 6 ký tự"]
+      })
+    );
+  }
 
-  db.users.push(user);
-  const token = issueToken(user.id);
-  return res.status(201).json(ok({ token, ...sanitizeUser(user) }, "Dang ky thanh cong", 201));
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json(
+      fail("Email không hợp lệ", 400, {
+        email: ["Email không hợp lệ"]
+      })
+    );
+  }
+
+  try {
+    // Kiểm tra username hoặc email đã tồn tại
+    const exists = await User.findOne({
+      $or: [{ username }, { email }]
+    });
+
+    if (exists) {
+      const isUsernameTaken = exists.username === username;
+      const field = isUsernameTaken ? "username" : "email";
+      const label = isUsernameTaken ? "Tên đăng nhập" : "Email";
+      return res.status(409).json(
+        fail(`${label} đã được sử dụng`, 409, {
+          [field]: [`${label} đã được sử dụng`]
+        })
+      );
+    }
+
+    // Tạo user mới (password sẽ tự hash qua pre-save hook)
+    const user = await User.create({
+      username,
+      email,
+      password,
+      role: "USER",
+      hasPassword: true,
+      authProvider: "LOCAL"
+    });
+
+    // Tạo JWT token
+    const token = issueToken(user._id.toString());
+
+    console.log(`[AUTH] Register successful for user: ${username}`);
+    return res.status(201).json(ok({ token, ...sanitizeUser(user) }, "Đăng ký thành công", 201));
+  } catch (error) {
+    console.error("Register error:", error);
+
+    // Xử lý lỗi duplicate key từ MongoDB
+    if (error.code === 11000) {
+      const dupField = Object.keys(error.keyPattern || {})[0];
+      const label = dupField === "username" ? "Tên đăng nhập" : "Email";
+      return res.status(409).json(
+        fail(`${label} đã được sử dụng`, 409, {
+          [dupField]: [`${label} đã được sử dụng`]
+        })
+      );
+    }
+
+    return res.status(500).json(fail("Lỗi server", 500));
+  }
 });
 
+/**
+ * POST /api/auth/forgot-password
+ * Gửi email đặt lại mật khẩu (placeholder).
+ */
 authRouter.post("/forgot-password", (_req, res) => {
-  res.json(ok(null, "Neu email ton tai, huong dan dat lai mat khau da duoc gui"));
+  res.json(ok(null, "Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi"));
 });
 
+/**
+ * POST /api/auth/reset-password
+ * Đặt lại mật khẩu (placeholder).
+ */
 authRouter.post("/reset-password", (_req, res) => {
-  res.json(ok(null, "Dat lai mat khau thanh cong"));
+  res.json(ok(null, "Đặt lại mật khẩu thành công"));
 });

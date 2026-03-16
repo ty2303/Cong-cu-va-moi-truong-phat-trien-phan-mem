@@ -1,6 +1,7 @@
 import express from "express";
 import { createOrder, db, paginate } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
+import { sendToUser } from "../lib/realtime.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 
 export const ordersRouter = express.Router();
@@ -16,7 +17,7 @@ ordersRouter.get("/my", requireAuth, (req, res) => {
   res.json(ok(items));
 });
 
-ordersRouter.post("/", (req, res) => {
+ordersRouter.post("/", requireAuth, (req, res) => {
   const order = createOrder(req.body, req.user);
   res.status(201).json(ok(order, "Dat hang thanh cong", 201));
 });
@@ -27,6 +28,10 @@ ordersRouter.patch("/:id/status", requireAdmin, (req, res) => {
     return res.status(404).json(fail("Khong tim thay don hang", 404));
   }
   order.status = req.query.status ?? req.body.status ?? order.status;
+  sendToUser(order.userId, "/user/queue/order-status", {
+    orderId: order.id,
+    newStatus: order.status
+  });
   res.json(ok(order, "Cap nhat trang thai thanh cong"));
 });
 
