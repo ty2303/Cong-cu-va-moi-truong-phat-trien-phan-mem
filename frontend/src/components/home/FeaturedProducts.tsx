@@ -43,12 +43,11 @@ export default function FeaturedProducts() {
       setError('');
 
       try {
-        const response = await apiClient.get<ApiResponse<PaginatedResponse<Product>>>(
-          ENDPOINTS.PRODUCTS.BASE,
-          {
-            params: { size: 100 },
-          },
-        );
+        const response = await apiClient.get<
+          ApiResponse<PaginatedResponse<Product>>
+        >(ENDPOINTS.PRODUCTS.BASE, {
+          params: { size: 100 },
+        });
 
         if (ignore) {
           return;
@@ -135,17 +134,21 @@ export default function FeaturedProducts() {
         {error ? (
           <div className="rounded-[1.75rem] border border-red-200 bg-red-50/80 p-8 text-center">
             <AlertCircle className="mx-auto h-10 w-10 text-red-500" />
-            <p className="mt-4 text-sm leading-6 text-text-secondary">{error}</p>
+            <p className="mt-4 text-sm leading-6 text-text-secondary">
+              {error}
+            </p>
           </div>
         ) : loading || featuredProducts.length > 0 ? (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {loading
-              ? Array.from({ length: FEATURED_PRODUCT_LIMIT }).map((_, index) => (
-                  <ProductCardSkeleton
-                    key={`featured-product-skeleton-${index}`}
-                    index={index}
-                  />
-                ))
+              ? Array.from({ length: FEATURED_PRODUCT_LIMIT }).map(
+                  (_, index) => (
+                    <ProductCardSkeleton
+                      key={`featured-product-skeleton-${index}`}
+                      index={index}
+                    />
+                  ),
+                )
               : featuredProducts.map((product, index) => (
                   <ProductCard
                     key={product.id}
