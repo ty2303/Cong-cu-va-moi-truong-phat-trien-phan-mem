@@ -101,20 +101,42 @@ export const useCartStore = create<CartState>()(
 
       removeItem: async (productId) => {
         const { isLoggedIn } = useAuthStore.getState();
+        const addToast = useToastStore.getState().addToast;
         const prevItems = get().items;
+        const removedItem = prevItems.find((i) => i.product.id === productId);
 
         // Optimistic update
         set({ items: prevItems.filter((i) => i.product.id !== productId) });
 
-        if (!isLoggedIn) return;
+        if (!removedItem) return;
+
+        if (!isLoggedIn) {
+          addToast(
+            'success',
+            `Đã xóa ${removedItem.product.name} khỏi giỏ hàng`,
+          );
+          return;
+        }
 
         try {
           const res = await apiClient.delete<ApiResponse<ServerCart>>(
             ENDPOINTS.CART.ITEM(productId),
           );
           set({ items: serverToLocal(res.data.data) });
-        } catch {
+          addToast(
+            'success',
+            `Đã xóa ${removedItem.product.name} khỏi giỏ hàng`,
+          );
+        } catch (err: unknown) {
           set({ items: prevItems });
+
+          const axiosErr = err as {
+            response?: { data?: { message?: string } };
+          };
+          const message =
+            axiosErr.response?.data?.message ??
+            'Không thể xóa sản phẩm khỏi giỏ hàng';
+          addToast('error', message);
         }
       },
 

@@ -98,4 +98,49 @@ describe('Cart quantity controls', () => {
       screen.getByRole('button', { name: 'Tăng số lượng' }),
     ).toBeDisabled();
   });
+
+  test('shows a success toast after removing an item from the cart', async () => {
+    const [
+      { Component: CartPage },
+      { default: ToastContainer },
+      { useAuthStore },
+      { useCartStore },
+      { useToastStore },
+    ] = await Promise.all([
+      import('@/pages/Cart'),
+      import('@/components/ui/ToastContainer'),
+      import('@/store/useAuthStore'),
+      import('@/store/useCartStore'),
+      import('@/store/useToastStore'),
+    ]);
+
+    useCartStore.setState({
+      items: [{ product, quantity: 1 }],
+      isLoading: false,
+    });
+    useAuthStore.setState({
+      token: null,
+      user: null,
+      isLoggedIn: false,
+      isAdmin: false,
+    });
+    useToastStore.setState({ toasts: [] });
+
+    render(
+      <MemoryRouter>
+        <CartPage />
+        <ToastContainer />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: `Xóa ${product.name} khỏi giỏ hàng`,
+      }),
+    );
+
+    expect(
+      screen.getByText(`Đã xóa ${product.name} khỏi giỏ hàng`),
+    ).toBeInTheDocument();
+  });
 });
