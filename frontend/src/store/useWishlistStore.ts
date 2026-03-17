@@ -209,7 +209,10 @@ export const useWishlistStore = create<WishlistState>()(
               };
             });
           } catch {
-            set({ isLoading: false, error: 'Khong the tai wishlist tu he thong.' });
+            set({
+              isLoading: false,
+              error: 'Khong the tai wishlist tu he thong.',
+            });
           }
           return;
         }
