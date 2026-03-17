@@ -138,7 +138,7 @@ export function Component() {
       }
 
       login(token, user as AuthUser);
-      useWishlistStore.getState().fetch();
+      await useWishlistStore.getState().syncSession();
       useCartStore.getState().fetch();
       navigate(user.role === 'ADMIN' ? '/admin' : '/');
     } catch (err: unknown) {

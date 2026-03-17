@@ -103,7 +103,6 @@ export default function Navbar() {
 
   const handleLogout = () => {
     useCartStore.getState().clearLocal();
-    useWishlistStore.getState().clearLocal();
     logout();
     navigate('/login');
   };
