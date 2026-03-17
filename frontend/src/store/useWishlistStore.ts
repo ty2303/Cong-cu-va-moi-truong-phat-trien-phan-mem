@@ -194,8 +194,8 @@ export const useWishlistStore = create<WishlistState>()(
               },
             );
             set((state) => {
-              const { [GUEST_WISHLIST_KEY]: _guestItems, ...restBuckets } =
-                state.itemsByOwner;
+              const restBuckets = { ...state.itemsByOwner };
+              delete restBuckets[GUEST_WISHLIST_KEY];
 
               return {
                 currentOwnerKey: nextOwnerKey,
