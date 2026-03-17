@@ -30,6 +30,66 @@ wishlistRouter.get("/", async (req, res) => {
   res.json(ok(items));
 });
 
+wishlistRouter.post("/sync", async (req, res) => {
+  const requestedIds = Array.isArray(req.body?.productIds)
+    ? [...new Set(req.body.productIds.filter((id) => typeof id === "string"))]
+    : [];
+
+  if (requestedIds.length === 0) {
+    if (!isDatabaseReady()) {
+      const ids = db.wishlists[req.user.id] ?? [];
+      const items = ids
+        .map((id) => db.products.find((product) => product.id === id))
+        .filter(Boolean)
+        .map((product) => {
+          const enriched = withCategory(product);
+          return serializeProduct({ _id: product.id, ...enriched }, enriched.categoryName);
+        });
+      return res.json(ok(items));
+    }
+
+    const wishlist = await Wishlist.findOne({ userId: req.user.id }).lean();
+    const items = await getWishlistProducts(wishlist?.productIds ?? []);
+    return res.json(ok(items));
+  }
+
+  if (!isDatabaseReady()) {
+    const validIds = requestedIds.filter((productId) =>
+      db.products.some((product) => product.id === productId)
+    );
+    const nextIds = new Set([...(db.wishlists[req.user.id] ?? []), ...validIds]);
+    db.wishlists[req.user.id] = [...nextIds];
+
+    const items = db.wishlists[req.user.id]
+      .map((id) => db.products.find((product) => product.id === id))
+      .filter(Boolean)
+      .map((product) => {
+        const enriched = withCategory(product);
+        return serializeProduct({ _id: product.id, ...enriched }, enriched.categoryName);
+      });
+
+    return res.json(ok(items));
+  }
+
+  const validProducts = await Product.find({ _id: { $in: requestedIds } }, { _id: 1 }).lean();
+  const validIds = validProducts.map((product) => product._id);
+  const wishlist = await Wishlist.findOne({ userId: req.user.id }).lean();
+  const nextIds = [...new Set([...(wishlist?.productIds ?? []), ...validIds])];
+
+  await Wishlist.findOneAndUpdate(
+    { userId: req.user.id },
+    {
+      userId: req.user.id,
+      productIds: nextIds,
+      updatedAt: new Date()
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  const items = await getWishlistProducts(nextIds);
+  return res.json(ok(items));
+});
+
 wishlistRouter.post("/:productId", async (req, res) => {
   const productId = req.params.productId;
   const productExists = isDatabaseReady()

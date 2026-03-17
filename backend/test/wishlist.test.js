@@ -112,6 +112,27 @@ describe("Wishlist API", () => {
 		});
 	});
 
+	test("POST /api/wishlist/sync merges guest items into the signed-in user's wishlist", async () => {
+		await withServer(async (port) => {
+			const res = await fetch(`http://127.0.0.1:${port}/api/wishlist/sync`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer demo-token",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					productIds: ["prod-galaxy-s25", "prod-does-not-exist"],
+				}),
+			});
+			const body = await res.json();
+
+			assert.strictEqual(res.status, 200);
+			assert.ok(body.data.some((item) => item.id === "prod-galaxy-s25"));
+			assert.ok(!body.data.some((item) => item.id === "prod-does-not-exist"));
+			assert.ok(db.wishlists["user-1"].includes("prod-galaxy-s25"));
+		});
+	});
+
 	test("DELETE /api/wishlist clears all items", async () => {
 		await withServer(async (port) => {
 			const res = await fetch(`http://127.0.0.1:${port}/api/wishlist`, {
