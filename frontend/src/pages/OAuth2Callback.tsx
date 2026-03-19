@@ -2,7 +2,8 @@ import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 
-import { useAuthStore, type AuthUser } from '@/store/useAuthStore';
+import { type AuthUser, useAuthStore } from '@/store/useAuthStore';
+import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
 
 export const Component = OAuth2Callback;
@@ -23,6 +24,7 @@ function OAuth2Callback() {
       const user: AuthUser = { id, username, email, role };
       login(token, user);
       useWishlistStore.getState().fetch();
+      useCartStore.getState().fetch();
       navigate(role === 'ADMIN' ? '/admin' : '/', { replace: true });
     } else {
       navigate('/login?error=google_failed', { replace: true });

@@ -14,7 +14,8 @@ import { Link, useNavigate } from 'react-router';
 import apiClient from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
 import type { ApiResponse } from '@/api/types';
-import { useAuthStore, type AuthUser } from '@/store/useAuthStore';
+import { type AuthUser, useAuthStore } from '@/store/useAuthStore';
+import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
 
 interface AuthResponse {
@@ -137,7 +138,8 @@ export function Component() {
       }
 
       login(token, user as AuthUser);
-      useWishlistStore.getState().fetch();
+      await useWishlistStore.getState().syncSession();
+      useCartStore.getState().fetch();
       navigate(user.role === 'ADMIN' ? '/admin' : '/');
     } catch (err: unknown) {
       const axiosErr = err as {

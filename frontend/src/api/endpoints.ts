@@ -30,7 +30,13 @@ export const ENDPOINTS = {
   },
   WISHLIST: {
     BASE: '/wishlist',
+    SYNC: '/wishlist/sync',
     TOGGLE: (productId: string) => `/wishlist/${productId}`,
+  },
+  CART: {
+    BASE: '/cart',
+    ITEMS: '/cart/items',
+    ITEM: (productId: string) => `/cart/items/${productId}`,
   },
   REVIEWS: {
     BASE: '/reviews',
