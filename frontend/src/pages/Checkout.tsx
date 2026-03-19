@@ -217,7 +217,7 @@ function Checkout() {
         );
         window.location.href = momoRes.data.data.payUrl;
       } else {
-        navigate('/checkout/success', {
+        navigate(`/checkout/success?orderId=${encodeURIComponent(order.id)}`, {
           state: { fromCheckout: true, orderId: order.id },
         });
       }

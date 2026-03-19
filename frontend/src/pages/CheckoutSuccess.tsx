@@ -1,23 +1,54 @@
-import { Check, ClipboardList, ShoppingBag } from 'lucide-react';
+import { Check, ClipboardList, Loader2, ShoppingBag } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Link, Navigate, useLocation } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router';
+
+import { useOrderStore } from '@/store/useOrderStore';
 
 export const Component = CheckoutSuccess;
 
 function CheckoutSuccess() {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const fetchOrderById = useOrderStore((store) => store.fetchOrderById);
+  const currentOrder = useOrderStore((store) => store.currentOrder);
+  const isLoading = useOrderStore((store) => store.isLoading);
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
   const state = location.state as {
     fromCheckout?: boolean;
     orderId?: string;
   } | null;
   const fromCheckout = state?.fromCheckout;
 
-  // Prevent direct URL access ‚Äî only allow navigation from checkout flow
-  if (!fromCheckout) {
+  useEffect(() => {
+    const resolvedOrderId = state?.orderId ?? searchParams.get('orderId') ?? '';
+    if (!resolvedOrderId) return;
+    let cancelled = false;
+
+    fetchOrderById(resolvedOrderId).finally(() => {
+      if (!cancelled) {
+        setHasAttemptedLoad(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchOrderById, searchParams, state?.orderId]);
+
+  if (!fromCheckout && !searchParams.get('orderId')) {
     return <Navigate to="/products" replace />;
   }
 
-  const orderId = state?.orderId ?? 'N/A';
+  const orderId = state?.orderId ?? searchParams.get('orderId') ?? 'N/A';
+  const order = currentOrder?.id === orderId ? currentOrder : null;
+  const shortOrderId =
+    orderId === 'N/A' ? orderId : orderId.slice(-8).toUpperCase();
+  const shippingAddress = order
+    ? [order.address, order.ward, order.district, order.city]
+        .filter(Boolean)
+        .join(', ')
+    : null;
 
   return (
     <section className="flex min-h-[70vh] items-center justify-center px-6">
@@ -25,9 +56,8 @@ function CheckoutSuccess() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5 }}
-        className="mx-auto max-w-md text-center"
+        className="mx-auto max-w-xl text-center"
       >
-        {/* Success icon */}
         <div className="mb-8 flex justify-center">
           <motion.div
             initial={{ scale: 0 }}
@@ -50,22 +80,78 @@ function CheckoutSuccess() {
           transition={{ delay: 0.35 }}
         >
           <h1 className="font-display text-3xl font-bold text-text-primary">
-            ƒê·∫∑t h√†ng th√†nh c√¥ng!
+            –?t h‡ng th‡nh cÙng!
           </h1>
 
           <p className="mt-4 text-text-secondary">
-            C·∫£m ∆°n b·∫°n ƒë√£ tin t∆∞·ªüng v√† mua h√†ng. M√£ ƒë∆°n h√†ng c·ªßa b·∫°n l√†{' '}
+            C?m on b?n d„ tin tu?ng v‡ mua h‡ng. M„ don h‡ng c?a b?n l‡{' '}
             <span className="font-mono font-bold text-text-primary">
-              #{orderId.slice(-8).toUpperCase()}
+              #{shortOrderId}
             </span>
             .
           </p>
 
           <p className="mt-2 text-sm text-text-muted">
-            Ch√∫ng t√¥i s·∫Ω li√™n h·ªá s·ªõm ƒë·ªÉ x√°c nh·∫≠n v√† giao h√†ng ƒë·∫øn b·∫°n.
+            –on h‡ng COD d„ du?c ghi nh?n v?i tr?ng th·i chua thanh to·n. Ch˙ng
+            tÙi s? liÍn h? s?m d? x·c nh?n v‡ giao h‡ng d?n b?n.
           </p>
 
-          {/* Actions */}
+          {isLoading && !order && (
+            <div className="mt-6 flex items-center justify-center gap-2 text-sm text-text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              –ang t?i thÙng tin don h‡ng...
+            </div>
+          )}
+
+          {order && (
+            <div className="mt-6 rounded-2xl border border-border bg-surface p-5 text-left shadow-sm">
+              <h2 className="font-display text-lg font-semibold text-text-primary">
+                ThÙng tin don h‡ng
+              </h2>
+              <div className="mt-4 grid gap-3 text-sm text-text-secondary sm:grid-cols-2">
+                <p>
+                  Ngu?i nh?n:{' '}
+                  <span className="font-medium text-text-primary">
+                    {order.customerName}
+                  </span>
+                </p>
+                <p>
+                  S? di?n tho?i:{' '}
+                  <span className="font-medium text-text-primary">
+                    {order.phone}
+                  </span>
+                </p>
+                <p className="sm:col-span-2">
+                  Giao t?i:{' '}
+                  <span className="font-medium text-text-primary">
+                    {shippingAddress}
+                  </span>
+                </p>
+                <p>
+                  Tr?ng th·i thanh to·n:{' '}
+                  <span className="font-medium text-text-primary">
+                    {order.paymentStatus === 'UNPAID'
+                      ? 'Thanh to·n khi nh?n h‡ng'
+                      : order.paymentStatus}
+                  </span>
+                </p>
+                <p>
+                  T?ng thanh to·n:{' '}
+                  <span className="font-semibold text-brand">
+                    {order.total.toLocaleString('vi-VN')}?
+                  </span>
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!order && hasAttemptedLoad && !isLoading && (
+            <p className="mt-6 text-sm text-text-muted">
+              N?u chua th?y chi ti?t don, b?n cÛ th? xem l?i trong trang c·
+              nh‚n.
+            </p>
+          )}
+
           <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link
               to="/profile"
@@ -73,14 +159,14 @@ function CheckoutSuccess() {
               className="btn-primary flex items-center justify-center gap-2 no-underline"
             >
               <ClipboardList className="h-4 w-4" />
-              Xem ƒë∆°n h√†ng
+              Xem don h‡ng
             </Link>
             <Link
               to="/products"
               className="btn-outline flex items-center justify-center gap-2 no-underline"
             >
               <ShoppingBag className="h-4 w-4" />
-              Ti·∫øp t·ª•c mua s·∫Øm
+              Ti?p t?c mua s?m
             </Link>
           </div>
         </motion.div>

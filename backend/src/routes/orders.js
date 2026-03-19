@@ -53,6 +53,38 @@ ordersRouter.get("/my", requireAuth, async (req, res) => {
   }
 });
 
+ordersRouter.get("/:id", requireAuth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id).lean();
+
+    if (!order) {
+      const memOrder = db.orders.find((item) => item.id === req.params.id);
+      if (!memOrder) {
+        return res.status(404).json(fail("KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n hÃ ng", 404));
+      }
+      if (req.user.role !== "ADMIN" && memOrder.userId !== req.user.id) {
+        return res.status(403).json(fail("Forbidden", 403));
+      }
+      return res.json(ok(memOrder));
+    }
+
+    if (req.user.role !== "ADMIN" && order.userId !== req.user.id) {
+      return res.status(403).json(fail("Forbidden", 403));
+    }
+
+    return res.json(ok(serializeOrder(order)));
+  } catch {
+    const memOrder = db.orders.find((item) => item.id === req.params.id);
+    if (!memOrder) {
+      return res.status(404).json(fail("KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n hÃ ng", 404));
+    }
+    if (req.user.role !== "ADMIN" && memOrder.userId !== req.user.id) {
+      return res.status(403).json(fail("Forbidden", 403));
+    }
+    return res.json(ok(memOrder));
+  }
+});
+
 /** POST / - Tạo đơn hàng mới */
 ordersRouter.post("/", requireAuth, async (req, res) => {
   const {

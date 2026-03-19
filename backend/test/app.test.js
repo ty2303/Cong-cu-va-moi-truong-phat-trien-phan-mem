@@ -207,6 +207,24 @@ describe("Order pricing", () => {
 			assert.equal(body.data.total, 500000);
 		});
 	});
+
+	test("GET /api/orders/:id lets the owner view order details", async () => {
+		await withServer(async (port) => {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/orders/order-1`,
+				{
+					headers: {
+						Authorization: "Bearer demo-token",
+					},
+				},
+			);
+			const body = await response.json();
+
+			assert.equal(response.status, 200);
+			assert.equal(body.data.id, "order-1");
+			assert.equal(body.data.paymentMethod, "COD");
+		});
+	});
 });
 
 test("PATCH /api/orders/:id/cancel restores stock for fallback-created orders", async () => {
