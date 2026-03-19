@@ -3,46 +3,245 @@ import { createOrder, db, paginate } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
 import { sendToUser } from "../lib/realtime.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
+import { Order } from "../models/Order.js";
+import { Product } from "../models/Product.js";
 
 export const ordersRouter = express.Router();
 
-ordersRouter.get("/", requireAdmin, (req, res) => {
+const VALID_STATUSES = ["PENDING", "CONFIRMED", "SHIPPING", "DELIVERED", "CANCELLED"];
+const CANCELLABLE_STATUSES = ["PENDING", "CONFIRMED"];
+
+/** GET / - Danh sách tất cả đơn hàng (admin) */
+ordersRouter.get("/", requireAdmin, async (req, res) => {
   const page = Number(req.query.page ?? 0);
   const size = Number(req.query.size ?? 10);
-  res.json(ok(paginate(db.orders, page, size)));
-});
 
-ordersRouter.get("/my", requireAuth, (req, res) => {
-  const items = db.orders.filter((order) => order.userId === req.user.id);
-  res.json(ok(items));
-});
+  try {
+    const total = await Order.countDocuments();
+    const orders = await Order.find()
+      .sort({ createdAt: -1 })
+      .skip(page * size)
+      .limit(size)
+      .lean();
 
-ordersRouter.post("/", requireAuth, (req, res) => {
-  const order = createOrder(req.body, req.user);
-  res.status(201).json(ok(order, "Dat hang thanh cong", 201));
-});
-
-ordersRouter.patch("/:id/status", requireAdmin, (req, res) => {
-  const order = db.orders.find((item) => item.id === req.params.id);
-  if (!order) {
-    return res.status(404).json(fail("Khong tim thay don hang", 404));
+    return res.json(
+      ok({
+        content: orders,
+        number: page,
+        size,
+        totalPages: Math.max(1, Math.ceil(total / size)),
+        totalElements: total,
+      })
+    );
+  } catch {
+    return res.json(ok(paginate(db.orders, page, size)));
   }
-  order.status = req.query.status ?? req.body.status ?? order.status;
-  sendToUser(order.userId, "/user/queue/order-status", {
-    orderId: order.id,
-    newStatus: order.status
-  });
-  res.json(ok(order, "Cap nhat trang thai thanh cong"));
 });
 
-ordersRouter.patch("/:id/cancel", requireAuth, (req, res) => {
-  const order = db.orders.find((item) => item.id === req.params.id);
-  if (!order) {
-    return res.status(404).json(fail("Khong tim thay don hang", 404));
+/** GET /my - Đơn hàng của người dùng hiện tại */
+ordersRouter.get("/my", requireAuth, async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .lean();
+    return res.json(ok(orders));
+  } catch {
+    const items = db.orders.filter((order) => order.userId === req.user.id);
+    return res.json(ok(items));
   }
-  order.status = "CANCELLED";
-  order.cancelReason = String(req.query.reason ?? "Khac");
-  order.cancelledBy = req.user.role === "ADMIN" ? "ADMIN" : "USER";
-  order.paymentStatus = "FAILED";
-  res.json(ok(order, "Huy don hang thanh cong"));
+});
+
+/** POST / - Tạo đơn hàng mới */
+ordersRouter.post("/", requireAuth, async (req, res) => {
+  const {
+    email,
+    customerName,
+    phone,
+    address,
+    city,
+    district,
+    ward,
+    paymentMethod,
+    items,
+    note,
+  } = req.body;
+
+  // Validate required fields
+  if (!email || !customerName || !phone || !address || !city || !district || !ward || !paymentMethod) {
+    return res.status(400).json(fail("Vui lòng điền đầy đủ thông tin", 400));
+  }
+
+  if (!["COD", "MOMO"].includes(paymentMethod)) {
+    return res.status(400).json(fail("Phương thức thanh toán không hợp lệ", 400));
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json(fail("Giỏ hàng trống", 400));
+  }
+
+  for (const item of items) {
+    if (!item.productId || !item.productName || item.price == null || !item.quantity || item.quantity < 1) {
+      return res.status(400).json(fail("Thông tin sản phẩm không hợp lệ", 400));
+    }
+  }
+
+  try {
+    // Validate tồn kho từ MongoDB
+    for (const item of items) {
+      const product = await Product.findById(item.productId);
+      if (!product) {
+        return res.status(404).json(fail(`Sản phẩm "${item.productName}" không tồn tại`, 404));
+      }
+      if (product.stock < item.quantity) {
+        return res
+          .status(409)
+          .json(fail(`Sản phẩm "${product.name}" không đủ hàng (còn ${product.stock})`, 409));
+      }
+    }
+
+    // Tính tổng tiền phía server
+    const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const shippingFee = subtotal > 10_000_000 ? 0 : 30_000;
+
+    // Lưu đơn hàng vào MongoDB
+    const order = await Order.create({
+      userId: req.user.id,
+      email,
+      customerName,
+      phone,
+      address,
+      city,
+      district,
+      ward,
+      note: note ?? "",
+      paymentMethod,
+      items,
+      subtotal,
+      shippingFee,
+      total: subtotal + shippingFee,
+      paymentStatus: paymentMethod === "MOMO" ? "PENDING" : "UNPAID",
+    });
+
+    // Giảm tồn kho sản phẩm
+    for (const item of items) {
+      await Product.findByIdAndUpdate(item.productId, {
+        $inc: { stock: -item.quantity },
+        updatedAt: new Date(),
+      });
+    }
+
+    return res.status(201).json(ok(order.toObject(), "Đặt hàng thành công", 201));
+  } catch {
+    // Fallback sang in-memory store
+    const order = createOrder(req.body, req.user);
+    return res.status(201).json(ok(order, "Đặt hàng thành công", 201));
+  }
+});
+
+/** PATCH /:id/status - Cập nhật trạng thái đơn hàng (admin) */
+ordersRouter.patch("/:id/status", requireAdmin, async (req, res) => {
+  const newStatus = req.query.status ?? req.body.status;
+
+  if (newStatus && !VALID_STATUSES.includes(newStatus)) {
+    return res.status(400).json(fail("Trạng thái không hợp lệ", 400));
+  }
+
+  try {
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status: newStatus },
+      { new: true }
+    ).lean();
+
+    if (!order) {
+      // Fallback sang in-memory
+      const memOrder = db.orders.find((item) => item.id === req.params.id);
+      if (!memOrder) {
+        return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
+      }
+      memOrder.status = newStatus ?? memOrder.status;
+      sendToUser(memOrder.userId, "/user/queue/order-status", {
+        orderId: memOrder.id,
+        newStatus: memOrder.status,
+      });
+      return res.json(ok(memOrder, "Cập nhật trạng thái thành công"));
+    }
+
+    sendToUser(order.userId, "/user/queue/order-status", {
+      orderId: order._id,
+      newStatus: order.status,
+    });
+    return res.json(ok(order, "Cập nhật trạng thái thành công"));
+  } catch {
+    const memOrder = db.orders.find((item) => item.id === req.params.id);
+    if (!memOrder) {
+      return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
+    }
+    memOrder.status = newStatus ?? memOrder.status;
+    sendToUser(memOrder.userId, "/user/queue/order-status", {
+      orderId: memOrder.id,
+      newStatus: memOrder.status,
+    });
+    return res.json(ok(memOrder, "Cập nhật trạng thái thành công"));
+  }
+});
+
+/** PATCH /:id/cancel - Hủy đơn hàng (user hủy đơn của mình, admin hủy bất kỳ) */
+ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
+  const cancelReason = String(req.query.reason ?? req.body.reason ?? "Khác");
+  const cancelledBy = req.user.role === "ADMIN" ? "ADMIN" : "USER";
+
+  try {
+    const order = await Order.findById(req.params.id).lean();
+
+    if (!order) {
+      // Fallback sang in-memory
+      const memOrder = db.orders.find((item) => item.id === req.params.id);
+      if (!memOrder) {
+        return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
+      }
+      memOrder.status = "CANCELLED";
+      memOrder.cancelReason = cancelReason;
+      memOrder.cancelledBy = cancelledBy;
+      memOrder.paymentStatus = "FAILED";
+      return res.json(ok(memOrder, "Hủy đơn hàng thành công"));
+    }
+
+    // Chỉ cho phép user hủy đơn của chính mình
+    if (cancelledBy === "USER" && order.userId !== req.user.id) {
+      return res.status(403).json(fail("Forbidden", 403));
+    }
+
+    if (!CANCELLABLE_STATUSES.includes(order.status)) {
+      return res
+        .status(400)
+        .json(fail("Không thể hủy đơn hàng ở trạng thái này", 400));
+    }
+
+    const updated = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status: "CANCELLED", cancelReason, cancelledBy, paymentStatus: "FAILED" },
+      { new: true }
+    ).lean();
+
+    // Hoàn lại tồn kho
+    for (const item of order.items) {
+      await Product.findByIdAndUpdate(item.productId, {
+        $inc: { stock: item.quantity },
+        updatedAt: new Date(),
+      });
+    }
+
+    return res.json(ok(updated, "Hủy đơn hàng thành công"));
+  } catch {
+    const memOrder = db.orders.find((item) => item.id === req.params.id);
+    if (!memOrder) {
+      return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
+    }
+    memOrder.status = "CANCELLED";
+    memOrder.cancelReason = cancelReason;
+    memOrder.cancelledBy = cancelledBy;
+    memOrder.paymentStatus = "FAILED";
+    return res.json(ok(memOrder, "Hủy đơn hàng thành công"));
+  }
 });
