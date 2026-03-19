@@ -2,6 +2,7 @@ import express from "express";
 import { createOrder, db, paginate } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
 import { calculateOrderPricing } from "../lib/orderPricing.js";
+import { serializeOrder } from "../lib/catalogSerializers.js";
 import { sendToUser } from "../lib/realtime.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { Order } from "../models/Order.js";
@@ -27,7 +28,7 @@ ordersRouter.get("/", requireAdmin, async (req, res) => {
 
     return res.json(
       ok({
-        content: orders,
+        content: orders.map(serializeOrder),
         number: page,
         size,
         totalPages: Math.max(1, Math.ceil(total / size)),
@@ -45,7 +46,7 @@ ordersRouter.get("/my", requireAuth, async (req, res) => {
     const orders = await Order.find({ userId: req.user.id })
       .sort({ createdAt: -1 })
       .lean();
-    return res.json(ok(orders));
+    return res.json(ok(orders.map(serializeOrder)));
   } catch {
     const items = db.orders.filter((order) => order.userId === req.user.id);
     return res.json(ok(items));
@@ -129,7 +130,7 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    return res.status(201).json(ok(order.toObject(), "Đặt hàng thành công", 201));
+    return res.status(201).json(ok(serializeOrder(order.toObject()), "Đặt hàng thành công", 201));
   } catch {
     // Fallback sang in-memory store
     const order = createOrder(req.body, req.user);
@@ -170,7 +171,7 @@ ordersRouter.patch("/:id/status", requireAdmin, async (req, res) => {
       orderId: order._id,
       newStatus: order.status,
     });
-    return res.json(ok(order, "Cập nhật trạng thái thành công"));
+    return res.json(ok(serializeOrder(order), "Cập nhật trạng thái thành công"));
   } catch {
     const memOrder = db.orders.find((item) => item.id === req.params.id);
     if (!memOrder) {
@@ -231,7 +232,7 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
       });
     }
 
-    return res.json(ok(updated, "Hủy đơn hàng thành công"));
+    return res.json(ok(serializeOrder(updated), "Hủy đơn hàng thành công"));
   } catch {
     const memOrder = db.orders.find((item) => item.id === req.params.id);
     if (!memOrder) {

@@ -18,8 +18,8 @@ import { ENDPOINTS } from '@/api/endpoints';
 import type { ApiResponse } from '@/api/types';
 import CancelOrderModal from '@/components/ui/CancelOrderModal';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useOrderStore } from '@/store/useOrderStore';
 import { useToastStore } from '@/store/useToastStore';
-import type { Order } from '@/types/order';
 import { ORDER_STATUS_COLOR, ORDER_STATUS_LABEL } from '@/types/order';
 
 interface UserProfile {
@@ -55,8 +55,10 @@ function Profile() {
   const needsSetupPassword = isGoogleOnly && !profile?.hasPassword;
 
   // Orders
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [ordersLoading, setOrdersLoading] = useState(false);
+  const orders = useOrderStore((s) => s.orders);
+  const ordersLoading = useOrderStore((s) => s.isLoading);
+  const fetchOrders = useOrderStore((s) => s.fetchOrders);
+  const cancelOrderInStore = useOrderStore((s) => s.cancelOrder);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Cancel modal
@@ -74,13 +76,8 @@ function Profile() {
 
   useEffect(() => {
     if (activeTab !== 'orders') return;
-    setOrdersLoading(true);
-    apiClient
-      .get<ApiResponse<Order[]>>(ENDPOINTS.ORDERS.MY)
-      .then((res) => setOrders(res.data.data))
-      .catch(() => setOrders([]))
-      .finally(() => setOrdersLoading(false));
-  }, [activeTab]);
+    fetchOrders();
+  }, [activeTab, fetchOrders]);
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,22 +127,7 @@ function Profile() {
 
   const handleCancelOrder = async (orderId: string, reason: string) => {
     try {
-      await apiClient.patch(ENDPOINTS.ORDERS.CANCEL(orderId), null, {
-        params: { reason },
-      });
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: 'CANCELLED' as const,
-                paymentStatus: 'FAILED',
-                cancelReason: reason,
-                cancelledBy: 'USER',
-              }
-            : o,
-        ),
-      );
+      await cancelOrderInStore(orderId, reason);
       addToast('success', 'Đơn hàng đã được hủy thành công');
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
