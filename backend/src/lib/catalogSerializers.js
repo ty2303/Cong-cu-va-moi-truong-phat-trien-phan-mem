@@ -29,6 +29,39 @@ export function serializeProduct(product, categoryName = "") {
   };
 }
 
+export function serializeOrder(order) {
+  return {
+    id: order._id,
+    userId: order.userId,
+    email: order.email,
+    customerName: order.customerName,
+    phone: order.phone,
+    address: order.address,
+    city: order.city,
+    district: order.district,
+    ward: order.ward,
+    note: order.note ?? "",
+    paymentMethod: order.paymentMethod,
+    status: order.status,
+    items: (order.items ?? []).map((item) => ({
+      productId: item.productId,
+      productName: item.productName,
+      productImage: item.productImage ?? "",
+      brand: item.brand ?? "",
+      price: item.price,
+      quantity: item.quantity,
+    })),
+    subtotal: order.subtotal,
+    shippingFee: order.shippingFee,
+    total: order.total,
+    paymentStatus: order.paymentStatus,
+    momoTransId: order.momoTransId,
+    cancelReason: order.cancelReason,
+    cancelledBy: order.cancelledBy,
+    createdAt: toIso(order.createdAt),
+  };
+}
+
 export function serializeReview(review) {
   return {
     id: review._id,

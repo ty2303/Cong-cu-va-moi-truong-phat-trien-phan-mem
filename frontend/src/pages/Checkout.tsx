@@ -14,6 +14,7 @@ import apiClient from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useCartStore } from '@/store/useCartStore';
+import { useOrderStore } from '@/store/useOrderStore';
 import type { ApiResponse } from '@/api/types';
 import type { CreateOrderPayload, Order } from '@/types/order';
 
@@ -31,6 +32,7 @@ function Checkout() {
   const clear = useCartStore((s) => s.clear);
   const { user } = useAuthStore();
 
+  const addOrder = useOrderStore((s) => s.addOrder);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('COD');
@@ -86,18 +88,19 @@ function Checkout() {
         ENDPOINTS.ORDERS.BASE,
         payload,
       );
-      const orderId = res.data.data.id;
+      const order = res.data.data;
+      addOrder(order);
       clear();
 
       if (paymentMethod === 'MOMO') {
         // Get MoMo payment URL then redirect browser to it
         const momoRes = await apiClient.post<ApiResponse<{ payUrl: string }>>(
-          ENDPOINTS.MOMO.CREATE(orderId),
+          ENDPOINTS.MOMO.CREATE(order.id),
         );
         window.location.href = momoRes.data.data.payUrl;
       } else {
         navigate('/checkout/success', {
-          state: { fromCheckout: true, orderId },
+          state: { fromCheckout: true, orderId: order.id },
         });
       }
     } catch {
