@@ -128,6 +128,87 @@ test("GET /health returns service status", async () => {
 	});
 });
 
+describe("Order pricing", () => {
+	test("POST /api/orders calculates shipping fee and discount on the backend", async () => {
+		await withServer(async (port) => {
+			const response = await fetch(`http://127.0.0.1:${port}/api/orders`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer demo-token",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					email: "demo@example.com",
+					customerName: "Demo User",
+					phone: "0900000001",
+					address: "123 Duong Nguyen Hue",
+					city: "TP.HCM",
+					district: "Quan 1",
+					ward: "Ben Nghe",
+					paymentMethod: "COD",
+					discount: 50000,
+					items: [
+						{
+							productId: "prod-iphone-15",
+							productName: "iPhone 15 Pro",
+							productImage: "",
+							brand: "Apple",
+							price: 100000,
+							quantity: 1,
+						},
+					],
+				}),
+			});
+			const body = await response.json();
+
+			assert.equal(response.status, 201);
+			assert.equal(body.data.subtotal, 100000);
+			assert.equal(body.data.shippingFee, 30000);
+			assert.equal(body.data.discount, 50000);
+			assert.equal(body.data.total, 80000);
+		});
+	});
+
+	test("POST /api/orders returns free shipping once subtotal reaches the frontend threshold", async () => {
+		await withServer(async (port) => {
+			const response = await fetch(`http://127.0.0.1:${port}/api/orders`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer demo-token",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					email: "demo@example.com",
+					customerName: "Demo User",
+					phone: "0900000001",
+					address: "123 Duong Nguyen Hue",
+					city: "TP.HCM",
+					district: "Quan 1",
+					ward: "Ben Nghe",
+					paymentMethod: "COD",
+					items: [
+						{
+							productId: "prod-iphone-15",
+							productName: "iPhone 15 Pro",
+							productImage: "",
+							brand: "Apple",
+							price: 500000,
+							quantity: 1,
+						},
+					],
+				}),
+			});
+			const body = await response.json();
+
+			assert.equal(response.status, 201);
+			assert.equal(body.data.subtotal, 500000);
+			assert.equal(body.data.shippingFee, 0);
+			assert.equal(body.data.discount, 0);
+			assert.equal(body.data.total, 500000);
+		});
+	});
+});
+
 test("admin middleware rejects unauthenticated requests", async () => {
 	await withServer(async (port) => {
 		const response = await fetch(`http://127.0.0.1:${port}/api/products`, {

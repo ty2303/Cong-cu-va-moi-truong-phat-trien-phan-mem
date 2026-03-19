@@ -1,6 +1,7 @@
 import express from "express";
 import { createOrder, db, paginate } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
+import { calculateOrderPricing } from "../lib/orderPricing.js";
 import { sendToUser } from "../lib/realtime.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { Order } from "../models/Order.js";
@@ -64,6 +65,7 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
     paymentMethod,
     items,
     note,
+    discount,
   } = req.body;
 
   // Validate required fields
@@ -100,8 +102,7 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
     }
 
     // Tính tổng tiền phía server
-    const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const shippingFee = subtotal > 10_000_000 ? 0 : 30_000;
+    const pricing = calculateOrderPricing(items, { discount });
 
     // Lưu đơn hàng vào MongoDB
     const order = await Order.create({
@@ -116,9 +117,7 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
       note: note ?? "",
       paymentMethod,
       items,
-      subtotal,
-      shippingFee,
-      total: subtotal + shippingFee,
+      ...pricing,
       paymentStatus: paymentMethod === "MOMO" ? "PENDING" : "UNPAID",
     });
 

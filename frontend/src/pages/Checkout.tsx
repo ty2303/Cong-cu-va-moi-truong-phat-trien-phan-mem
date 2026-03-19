@@ -12,6 +12,10 @@ import { Link, useNavigate } from 'react-router';
 
 import apiClient from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
+import {
+  calculateOrderPricing,
+  FREE_SHIPPING_THRESHOLD,
+} from '@/lib/orderPricing';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useCartStore } from '@/store/useCartStore';
 import type { ApiResponse } from '@/api/types';
@@ -51,8 +55,7 @@ function Checkout() {
     );
   }
 
-  const shippingFee = totalPrice >= 500000 ? 0 : 30000;
-  const total = totalPrice + shippingFee;
+  const pricing = calculateOrderPricing(totalPrice);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -407,28 +410,37 @@ function Checkout() {
               <div className="flex justify-between text-sm">
                 <span className="text-text-secondary">Tạm tính</span>
                 <span className="font-medium text-text-primary">
-                  {totalPrice.toLocaleString('vi-VN')}₫
+                  {pricing.subtotal.toLocaleString('vi-VN')}₫
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-text-secondary">Phí vận chuyển</span>
                 <span className="font-medium text-text-primary">
-                  {shippingFee === 0
+                  {pricing.shippingFee === 0
                     ? 'Miễn phí'
-                    : `${shippingFee.toLocaleString('vi-VN')}₫`}
+                    : `${pricing.shippingFee.toLocaleString('vi-VN')}₫`}
                 </span>
               </div>
-              {shippingFee > 0 && (
+              {pricing.shippingFee > 0 && (
                 <p className="text-xs text-text-muted">
-                  Miễn phí vận chuyển cho đơn hàng từ 500.000₫
+                  Miễn phí vận chuyển cho đơn hàng từ{' '}
+                  {FREE_SHIPPING_THRESHOLD.toLocaleString('vi-VN')}₫
                 </p>
+              )}
+              {pricing.discount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-secondary">Giảm giá</span>
+                  <span className="font-medium text-green-600">
+                    -{pricing.discount.toLocaleString('vi-VN')}₫
+                  </span>
+                </div>
               )}
               <div className="flex items-center justify-between border-t border-border pt-3">
                 <span className="font-display text-base font-bold text-text-primary">
                   Tổng cộng
                 </span>
                 <span className="font-display text-xl font-bold text-brand">
-                  {total.toLocaleString('vi-VN')}₫
+                  {pricing.total.toLocaleString('vi-VN')}₫
                 </span>
               </div>
             </div>

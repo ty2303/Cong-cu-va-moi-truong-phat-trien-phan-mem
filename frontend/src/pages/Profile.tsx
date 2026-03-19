@@ -589,6 +589,14 @@ function Profile() {
                                     : `${order.shippingFee.toLocaleString('vi-VN')}₫`}
                                 </span>
                               </div>
+                              {order.discount > 0 && (
+                                <div className="flex justify-between text-text-secondary">
+                                  <span>Giảm giá</span>
+                                  <span className="text-green-600">
+                                    -{order.discount.toLocaleString('vi-VN')}₫
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between font-bold text-text-primary">
                                 <span>Tổng cộng</span>
                                 <span className="text-brand">

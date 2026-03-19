@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
+import { calculateOrderPricing } from "../lib/orderPricing.js";
 
 const now = () => new Date().toISOString();
 
@@ -167,6 +168,7 @@ export const db = {
 			],
 			subtotal: 27990000,
 			shippingFee: 0,
+			discount: 0,
 			total: 27990000,
 			createdAt: now(),
 			paymentStatus: "PAID",
@@ -286,11 +288,9 @@ export function sanitizeUser(user) {
 }
 
 export function createOrder(payload, user) {
-	const subtotal = payload.items.reduce(
-		(sum, item) => sum + item.price * item.quantity,
-		0,
-	);
-	const shippingFee = subtotal > 10000000 ? 0 : 30000;
+	const pricing = calculateOrderPricing(payload.items, {
+		discount: payload.discount,
+	});
 	const order = {
 		id: crypto.randomUUID(),
 		userId: user?.id ?? "guest",
@@ -305,9 +305,7 @@ export function createOrder(payload, user) {
 		paymentMethod: payload.paymentMethod,
 		status: "PENDING",
 		items: payload.items,
-		subtotal,
-		shippingFee,
-		total: subtotal + shippingFee,
+		...pricing,
 		createdAt: now(),
 		paymentStatus: payload.paymentMethod === "MOMO" ? "PENDING" : "UNPAID",
 	};
