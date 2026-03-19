@@ -6,6 +6,7 @@ const now = () => new Date().toISOString();
 
 const JWT_SECRET = process.env.JWT_SECRET || "development-secret";
 const JWT_EXPIRES_IN = "7d";
+const reservedStockOrderIds = new Set();
 
 export const db = {
 	users: [
@@ -288,6 +289,22 @@ export function sanitizeUser(user) {
 }
 
 export function createOrder(payload, user) {
+	for (const item of payload.items) {
+		const product = db.products.find((entry) => entry.id === item.productId);
+		if (!product) {
+			const error = new Error(`Sản phẩm "${item.productName}" không tồn tại`);
+			error.status = 404;
+			throw error;
+		}
+		if (product.stock < item.quantity) {
+			const error = new Error(
+				`Sản phẩm "${product.name}" không đủ hàng (còn ${product.stock})`,
+			);
+			error.status = 409;
+			throw error;
+		}
+	}
+
 	const pricing = calculateOrderPricing(payload.items, {
 		discount: payload.discount,
 	});
@@ -310,8 +327,35 @@ export function createOrder(payload, user) {
 		paymentStatus: payload.paymentMethod === "MOMO" ? "PENDING" : "UNPAID",
 	};
 
+	for (const item of payload.items) {
+		const product = db.products.find((entry) => entry.id === item.productId);
+		if (!product) {
+			continue;
+		}
+		product.stock -= item.quantity;
+		product.updatedAt = now();
+	}
+
 	db.orders.unshift(order);
+	reservedStockOrderIds.add(order.id);
 	return order;
+}
+
+export function restoreReservedStockForOrder(order) {
+	if (!reservedStockOrderIds.has(order.id)) {
+		return;
+	}
+
+	for (const item of order.items) {
+		const product = db.products.find((entry) => entry.id === item.productId);
+		if (!product) {
+			continue;
+		}
+		product.stock += item.quantity;
+		product.updatedAt = now();
+	}
+
+	reservedStockOrderIds.delete(order.id);
 }
 
 /**

@@ -1,5 +1,5 @@
 import express from "express";
-import { createOrder, db, paginate } from "../data/store.js";
+import { createOrder, db, paginate, restoreReservedStockForOrder } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
 import { calculateOrderPricing } from "../lib/orderPricing.js";
 import { serializeOrder } from "../lib/catalogSerializers.js";
@@ -132,9 +132,15 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
 
     return res.status(201).json(ok(serializeOrder(order.toObject()), "Đặt hàng thành công", 201));
   } catch {
-    // Fallback sang in-memory store
-    const order = createOrder(req.body, req.user);
-    return res.status(201).json(ok(order, "Đặt hàng thành công", 201));
+    try {
+      // Fallback sang in-memory store
+      const order = createOrder(req.body, req.user);
+      return res.status(201).json(ok(order, "Đặt hàng thành công", 201));
+    } catch (fallbackError) {
+      return res
+        .status(fallbackError.status ?? 500)
+        .json(fail(fallbackError.message ?? "Đặt hàng thất bại", fallbackError.status ?? 500));
+    }
   }
 });
 
@@ -200,10 +206,19 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
       if (!memOrder) {
         return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
       }
+      if (cancelledBy === "USER" && memOrder.userId !== req.user.id) {
+        return res.status(403).json(fail("Forbidden", 403));
+      }
+      if (!CANCELLABLE_STATUSES.includes(memOrder.status)) {
+        return res
+          .status(400)
+          .json(fail("Không thể hủy đơn hàng ở trạng thái này", 400));
+      }
       memOrder.status = "CANCELLED";
       memOrder.cancelReason = cancelReason;
       memOrder.cancelledBy = cancelledBy;
       memOrder.paymentStatus = "FAILED";
+      restoreReservedStockForOrder(memOrder);
       return res.json(ok(memOrder, "Hủy đơn hàng thành công"));
     }
 
@@ -238,10 +253,19 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
     if (!memOrder) {
       return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
     }
+    if (cancelledBy === "USER" && memOrder.userId !== req.user.id) {
+      return res.status(403).json(fail("Forbidden", 403));
+    }
+    if (!CANCELLABLE_STATUSES.includes(memOrder.status)) {
+      return res
+        .status(400)
+        .json(fail("Không thể hủy đơn hàng ở trạng thái này", 400));
+    }
     memOrder.status = "CANCELLED";
     memOrder.cancelReason = cancelReason;
     memOrder.cancelledBy = cancelledBy;
     memOrder.paymentStatus = "FAILED";
+    restoreReservedStockForOrder(memOrder);
     return res.json(ok(memOrder, "Hủy đơn hàng thành công"));
   }
 });

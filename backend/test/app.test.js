@@ -209,6 +209,72 @@ describe("Order pricing", () => {
 	});
 });
 
+test("PATCH /api/orders/:id/cancel restores stock for fallback-created orders", async () => {
+	await withServer(async (port) => {
+		const product = db.products.find((item) => item.id === "prod-iphone-15");
+		assert.ok(product);
+		const initialStock = product.stock;
+		let createdOrderId;
+
+		try {
+			const createResponse = await fetch(`http://127.0.0.1:${port}/api/orders`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer demo-token",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					email: "demo@example.com",
+					customerName: "Demo User",
+					phone: "0900000001",
+					address: "123 Duong Nguyen Hue",
+					city: "TP.HCM",
+					district: "Quan 1",
+					ward: "Ben Nghe",
+					paymentMethod: "COD",
+					items: [
+						{
+							productId: "prod-iphone-15",
+							productName: "iPhone 15 Pro",
+							productImage: "",
+							brand: "Apple",
+							price: 27990000,
+							quantity: 2,
+						},
+					],
+				}),
+			});
+			const createBody = await createResponse.json();
+			createdOrderId = createBody.data.id;
+
+			assert.equal(createResponse.status, 201);
+			assert.equal(product.stock, initialStock - 2);
+
+			const cancelResponse = await fetch(
+				`http://127.0.0.1:${port}/api/orders/${createdOrderId}/cancel?reason=Kh%C3%B4ng%20c%C3%B2n%20nhu%20c%E1%BA%A7u`,
+				{
+					method: "PATCH",
+					headers: {
+						Authorization: "Bearer demo-token",
+					},
+				},
+			);
+			const cancelBody = await cancelResponse.json();
+
+			assert.equal(cancelResponse.status, 200);
+			assert.equal(cancelBody.data.status, "CANCELLED");
+			assert.equal(cancelBody.data.paymentStatus, "FAILED");
+			assert.equal(product.stock, initialStock);
+		} finally {
+			product.stock = initialStock;
+			product.updatedAt = new Date().toISOString();
+			if (createdOrderId) {
+				db.orders = db.orders.filter((order) => order.id !== createdOrderId);
+			}
+		}
+	});
+});
+
 test("admin middleware rejects unauthenticated requests", async () => {
 	await withServer(async (port) => {
 		const response = await fetch(`http://127.0.0.1:${port}/api/products`, {
