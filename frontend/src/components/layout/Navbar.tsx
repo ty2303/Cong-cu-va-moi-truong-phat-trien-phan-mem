@@ -94,12 +94,14 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const wishlistCount = useWishlistStore((s) => s.items.length);
   const cartCount = useCartStore((s) => s.totalItems());
+  const cartSubtotal = useCartStore((s) => s.totalPrice());
   const { isLoggedIn, isAdmin, logout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const currentSearchQuery =
     new URLSearchParams(location.search).get('q')?.trim() ?? '';
   const searchFormKey = `${location.pathname}-${location.search}`;
+  const formattedCartSubtotal = `${cartSubtotal.toLocaleString('vi-VN')}₫`;
 
   const handleLogout = () => {
     useCartStore.getState().clearLocal();
@@ -188,9 +190,14 @@ export default function Navbar() {
           {/* Cart */}
           <Link
             to="/cart"
-            className="relative rounded-full p-2 text-text-secondary transition-colors hover:bg-surface-alt hover:text-brand"
+            className="relative rounded-full p-2 text-text-secondary transition-colors hover:bg-surface-alt hover:text-brand lg:flex lg:items-center lg:gap-2 lg:pl-3 lg:pr-2"
             aria-label={`Giỏ hàng${cartCount > 0 ? `, ${cartCount} sản phẩm` : ''}`}
           >
+            {cartCount > 0 && (
+              <span className="hidden text-sm font-semibold text-text-primary lg:inline">
+                {formattedCartSubtotal}
+              </span>
+            )}
             <ShoppingCart className="h-5 w-5" />
             <AnimatePresence>
               {cartCount > 0 && (
