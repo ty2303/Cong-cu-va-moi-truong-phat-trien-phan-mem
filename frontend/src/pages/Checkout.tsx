@@ -26,8 +26,113 @@ export const Component = Checkout;
 
 type PaymentMethod = 'COD' | 'MOMO';
 
-const inputClass =
-  'w-full rounded-xl border border-border bg-surface-alt px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-colors';
+/** Số điện thoại Việt Nam hợp lệ: 03x, 05x, 07x, 08x, 09x */
+const VN_PHONE_RE =
+  /^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[0-9]|9[0-9])[0-9]{7}$/;
+
+const inputBase =
+  'w-full rounded-xl border bg-surface-alt px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 transition-colors';
+const inputOk = `${inputBase} border-border focus:border-brand focus:ring-brand`;
+const inputErr = `${inputBase} border-red-400 focus:border-red-500 focus:ring-red-400`;
+
+type FieldKey =
+  | 'email'
+  | 'name'
+  | 'phone'
+  | 'address'
+  | 'city'
+  | 'district'
+  | 'ward';
+
+type FieldErrors = Partial<Record<FieldKey, string>>;
+
+function validate(fd: FormData): FieldErrors {
+  const get = (k: string) => ((fd.get(k) as string) ?? '').trim();
+  const errors: FieldErrors = {};
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(get('email')))
+    errors.email = 'Email không hợp lệ';
+
+  if (get('name').length < 2)
+    errors.name = 'Vui lòng nhập họ và tên đầy đủ';
+
+  if (!VN_PHONE_RE.test(get('phone').replace(/[\s-]/g, '')))
+    errors.phone = 'Số điện thoại không đúng định dạng (VD: 0912 345 678)';
+
+  if (!get('address')) errors.address = 'Vui lòng nhập địa chỉ';
+  if (!get('city')) errors.city = 'Vui lòng nhập tỉnh / thành phố';
+  if (!get('district')) errors.district = 'Vui lòng nhập quận / huyện';
+  if (!get('ward')) errors.ward = 'Vui lòng nhập phường / xã';
+
+  return errors;
+}
+
+/** Breadcrumb bước thanh toán */
+const STEPS = ['Giỏ hàng', 'Thanh toán', 'Xác nhận'];
+
+function StepBar({ current }: { current: number }) {
+  return (
+    <nav className="mb-10 flex items-center gap-0">
+      {STEPS.map((label, i) => (
+        <div key={label} className="flex items-center">
+          <div className="flex items-center gap-2">
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ring-2 ${
+                i < current
+                  ? 'bg-brand ring-brand text-white'
+                  : i === current
+                    ? 'bg-brand ring-brand text-white'
+                    : 'bg-surface-alt ring-border text-text-muted'
+              }`}
+            >
+              {i + 1}
+            </span>
+            <span
+              className={`text-sm font-medium ${
+                i === current
+                  ? 'text-brand'
+                  : i < current
+                    ? 'text-text-secondary'
+                    : 'text-text-muted'
+              }`}
+            >
+              {label}
+            </span>
+          </div>
+          {i < STEPS.length - 1 && (
+            <div
+              className={`mx-3 h-px w-10 ${i < current ? 'bg-brand' : 'bg-border'}`}
+            />
+          )}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+/** Label + input + error message */
+function Field({
+  label,
+  error,
+  required = true,
+  children,
+}: {
+  label: string;
+  error?: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-text-primary">
+        {label}
+        {required && <span className="ml-0.5 text-red-500">*</span>}
+      </label>
+      {children}
+      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
 
 function Checkout() {
   const navigate = useNavigate();
@@ -35,10 +140,11 @@ function Checkout() {
   const totalPrice = useCartStore((s) => s.totalPrice());
   const clear = useCartStore((s) => s.clear);
   const { user } = useAuthStore();
-
   const addOrder = useOrderStore((s) => s.addOrder);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('COD');
 
   if (items.length === 0) {
@@ -59,22 +165,32 @@ function Checkout() {
 
   const pricing = calculateOrderPricing(totalPrice);
 
+  const cls = (field: FieldKey) => (fieldErrors[field] ? inputErr : inputOk);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
     const fd = new FormData(e.currentTarget);
+    const errors = validate(fd);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
+    setLoading(true);
+
+    const get = (k: string) => ((fd.get(k) as string) ?? '').trim();
 
     const payload: CreateOrderPayload = {
-      email: fd.get('email') as string,
-      customerName: fd.get('name') as string,
-      phone: fd.get('phone') as string,
-      address: fd.get('address') as string,
-      city: fd.get('city') as string,
-      district: fd.get('district') as string,
-      ward: fd.get('ward') as string,
-      note: (fd.get('note') as string) || undefined,
+      email: get('email'),
+      customerName: get('name'),
+      phone: get('phone').replace(/[\s-]/g, ''),
+      address: get('address'),
+      city: get('city'),
+      district: get('district'),
+      ward: get('ward'),
+      note: get('note') || undefined,
       paymentMethod,
       items: items.map(({ product, quantity }) => ({
         productId: product.id,
@@ -96,7 +212,6 @@ function Checkout() {
       clear();
 
       if (paymentMethod === 'MOMO') {
-        // Get MoMo payment URL then redirect browser to it
         const momoRes = await apiClient.post<ApiResponse<{ payUrl: string }>>(
           ENDPOINTS.MOMO.CREATE(order.id),
         );
@@ -106,8 +221,11 @@ function Checkout() {
           state: { fromCheckout: true, orderId: order.id },
         });
       }
-    } catch {
-      setError('Đặt hàng thất bại. Vui lòng thử lại.');
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(
+        axiosErr.response?.data?.message ?? 'Đặt hàng thất bại. Vui lòng thử lại.',
+      );
     } finally {
       setLoading(false);
     }
@@ -116,7 +234,7 @@ function Checkout() {
   return (
     <section className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
       {/* Back link & heading */}
-      <div className="mb-10">
+      <div className="mb-6">
         <Link
           to="/cart"
           className="group inline-flex items-center gap-2 text-sm text-text-muted no-underline transition-colors hover:text-brand"
@@ -129,8 +247,10 @@ function Checkout() {
         </h1>
       </div>
 
+      <StepBar current={1} />
+
       <div className="grid gap-12 lg:grid-cols-12">
-        {/* ── Left Column: Form ── */}
+        {/* ── Left: Form ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -140,6 +260,7 @@ function Checkout() {
           <form
             id="checkout-form"
             onSubmit={handleSubmit}
+            noValidate
             className="space-y-8"
           >
             {/* Contact Info */}
@@ -150,54 +271,35 @@ function Checkout() {
               </h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <label
-                    htmlFor="email"
-                    className="mb-2 block text-sm font-medium text-text-primary"
-                  >
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    required
-                    defaultValue={user?.email ?? ''}
-                    placeholder="nguyenvan@example.com"
-                    className={inputClass}
-                  />
+                  <Field label="Email" error={fieldErrors.email}>
+                    <input
+                      type="email"
+                      id="email"
+                      name="email"
+                      defaultValue={user?.email ?? ''}
+                      placeholder="nguyenvan@example.com"
+                      className={cls('email')}
+                    />
+                  </Field>
                 </div>
-                <div>
-                  <label
-                    htmlFor="name"
-                    className="mb-2 block text-sm font-medium text-text-primary"
-                  >
-                    Họ và tên
-                  </label>
+                <Field label="Họ và tên" error={fieldErrors.name}>
                   <input
                     type="text"
                     id="name"
                     name="name"
-                    required
                     placeholder="Nguyễn Văn A"
-                    className={inputClass}
+                    className={cls('name')}
                   />
-                </div>
-                <div>
-                  <label
-                    htmlFor="phone"
-                    className="mb-2 block text-sm font-medium text-text-primary"
-                  >
-                    Số điện thoại
-                  </label>
+                </Field>
+                <Field label="Số điện thoại" error={fieldErrors.phone}>
                   <input
                     type="tel"
                     id="phone"
                     name="phone"
-                    required
                     placeholder="0912 345 678"
-                    className={inputClass}
+                    className={cls('phone')}
                   />
-                </div>
+                </Field>
               </div>
             </section>
 
@@ -208,71 +310,43 @@ function Checkout() {
                 Địa chỉ giao hàng
               </h2>
               <div className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="address"
-                    className="mb-2 block text-sm font-medium text-text-primary"
-                  >
-                    Địa chỉ
-                  </label>
+                <Field label="Địa chỉ" error={fieldErrors.address}>
                   <input
                     type="text"
                     id="address"
                     name="address"
-                    required
                     placeholder="Số nhà, Tên đường"
-                    className={inputClass}
+                    className={cls('address')}
                   />
-                </div>
+                </Field>
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <label
-                      htmlFor="city"
-                      className="mb-2 block text-sm font-medium text-text-primary"
-                    >
-                      Tỉnh / Thành phố
-                    </label>
+                  <Field label="Tỉnh / Thành phố" error={fieldErrors.city}>
                     <input
                       type="text"
                       id="city"
                       name="city"
-                      required
-                      placeholder="Tỉnh / Thành phố"
-                      className={inputClass}
+                      placeholder="TP. Hồ Chí Minh"
+                      className={cls('city')}
                     />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="district"
-                      className="mb-2 block text-sm font-medium text-text-primary"
-                    >
-                      Quận / Huyện
-                    </label>
+                  </Field>
+                  <Field label="Quận / Huyện" error={fieldErrors.district}>
                     <input
                       type="text"
                       id="district"
                       name="district"
-                      required
-                      placeholder="Quận / Huyện"
-                      className={inputClass}
+                      placeholder="Quận 1"
+                      className={cls('district')}
                     />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="ward"
-                      className="mb-2 block text-sm font-medium text-text-primary"
-                    >
-                      Phường / Xã
-                    </label>
+                  </Field>
+                  <Field label="Phường / Xã" error={fieldErrors.ward}>
                     <input
                       type="text"
                       id="ward"
                       name="ward"
-                      required
-                      placeholder="Phường / Xã"
-                      className={inputClass}
+                      placeholder="Phường Bến Nghé"
+                      className={cls('ward')}
                     />
-                  </div>
+                  </Field>
                 </div>
               </div>
             </section>
@@ -345,7 +419,7 @@ function Checkout() {
             </section>
 
             {/* Note */}
-            <section className="space-y-4">
+            <section className="space-y-2">
               <label
                 htmlFor="note"
                 className="block text-sm font-medium text-text-primary"
@@ -358,7 +432,7 @@ function Checkout() {
                 name="note"
                 rows={3}
                 placeholder="Ghi chú thêm về đơn hàng, ví dụ: giao vào buổi sáng..."
-                className={`${inputClass} resize-none`}
+                className={`${inputOk} resize-none`}
               />
             </section>
 
@@ -370,7 +444,7 @@ function Checkout() {
           </form>
         </motion.div>
 
-        {/* ── Right Column: Order Summary ── */}
+        {/* ── Right: Order Summary ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -379,7 +453,7 @@ function Checkout() {
         >
           <div className="sticky top-28 space-y-6 rounded-2xl border border-border bg-surface p-6 shadow-sm">
             <h3 className="font-display text-lg font-bold text-text-primary">
-              Đơn hàng của bạn
+              Đơn hàng của bạn ({items.length} sản phẩm)
             </h3>
 
             {/* Product list */}
@@ -397,9 +471,7 @@ function Checkout() {
                     <h4 className="line-clamp-1 text-sm font-medium text-text-primary">
                       {product.name}
                     </h4>
-                    <p className="text-xs text-text-muted">
-                      Số lượng: {quantity}
-                    </p>
+                    <p className="text-xs text-text-muted">x{quantity}</p>
                     <p className="text-sm font-semibold text-brand">
                       {(product.price * quantity).toLocaleString('vi-VN')}₫
                     </p>
@@ -460,14 +532,17 @@ function Checkout() {
                   <Loader2 className="h-5 w-5 animate-spin" />
                   Đang xử lý...
                 </>
+              ) : paymentMethod === 'MOMO' ? (
+                'Đặt hàng & Thanh toán MoMo'
               ) : (
                 'Đặt hàng ngay'
               )}
             </button>
 
             <p className="text-center text-xs text-text-muted">
-              Bằng việc đặt hàng, bạn đồng ý với điều khoản dịch vụ và chính
-              sách bảo mật của chúng tôi.
+              Bằng việc đặt hàng, bạn đồng ý với{' '}
+              <span className="underline">điều khoản dịch vụ</span> và{' '}
+              <span className="underline">chính sách bảo mật</span>.
             </p>
           </div>
         </motion.div>
