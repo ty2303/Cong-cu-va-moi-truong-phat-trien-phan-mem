@@ -406,206 +406,216 @@ function Profile() {
               </div>
             ) : (
               <div className="space-y-3">
-                {orders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="overflow-hidden rounded-2xl border border-border bg-surface"
-                  >
-                    {/* Order header */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedId(expandedId === order.id ? null : order.id)
-                      }
-                      className="flex w-full cursor-pointer items-center justify-between px-5 py-4 text-left transition-colors hover:bg-surface-alt"
-                    >
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="font-mono text-xs font-bold text-text-muted">
-                          #{order.id.slice(-8).toUpperCase()}
-                        </span>
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${ORDER_STATUS_COLOR[order.status]}`}
-                        >
-                          {ORDER_STATUS_LABEL[order.status]}
-                        </span>
-                        <span className="text-sm text-text-secondary">
-                          {new Date(order.createdAt).toLocaleDateString(
-                            'vi-VN',
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-display text-sm font-bold text-brand">
-                          {order.total.toLocaleString('vi-VN')}₫
-                        </span>
-                        {expandedId === order.id ? (
-                          <ChevronUp className="h-4 w-4 shrink-0 text-text-muted" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" />
-                        )}
-                      </div>
-                    </button>
+                {orders.map((order) => {
+                  const totalQuantity = order.items.reduce(
+                    (total, item) => total + item.quantity,
+                    0,
+                  );
 
-                    {/* Order detail */}
-                    <AnimatePresence>
-                      {expandedId === order.id && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className="overflow-hidden border-t border-border"
-                        >
-                          <div className="px-5 py-4">
-                            {/* Delivery info */}
-                            <div className="mb-4 grid gap-2 rounded-xl bg-surface-alt p-4 text-sm sm:grid-cols-2">
-                              <div>
-                                <span className="text-text-muted">
-                                  Người nhận:{' '}
-                                </span>
-                                <span className="font-medium text-text-primary">
-                                  {order.customerName}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-text-muted">
-                                  Điện thoại:{' '}
-                                </span>
-                                <span className="font-medium text-text-primary">
-                                  {order.phone}
-                                </span>
-                              </div>
-                              <div className="sm:col-span-2">
-                                <span className="text-text-muted">
-                                  Địa chỉ:{' '}
-                                </span>
-                                <span className="font-medium text-text-primary">
-                                  {order.address}, {order.ward},{' '}
-                                  {order.district}, {order.city}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-text-muted">
-                                  Thanh toán:{' '}
-                                </span>
-                                <span className="font-medium text-text-primary">
-                                  {order.paymentMethod}
-                                </span>
-                              </div>
-                              {order.paymentStatus && (
+                  return (
+                    <div
+                      key={order.id}
+                      className="overflow-hidden rounded-2xl border border-border bg-surface"
+                    >
+                      {/* Order header */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedId(expandedId === order.id ? null : order.id)
+                        }
+                        className="flex w-full cursor-pointer items-center justify-between px-5 py-4 text-left transition-colors hover:bg-surface-alt"
+                      >
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="font-mono text-xs font-bold text-text-muted">
+                            #{order.id.slice(-8).toUpperCase()}
+                          </span>
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${ORDER_STATUS_COLOR[order.status]}`}
+                          >
+                            {ORDER_STATUS_LABEL[order.status]}
+                          </span>
+                          <span className="text-sm text-text-secondary">
+                            {totalQuantity} sản phẩm
+                          </span>
+                          <span className="text-sm text-text-secondary">
+                            {new Date(order.createdAt).toLocaleDateString(
+                              'vi-VN',
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-display text-sm font-bold text-brand">
+                            {order.total.toLocaleString('vi-VN')}₫
+                          </span>
+                          {expandedId === order.id ? (
+                            <ChevronUp className="h-4 w-4 shrink-0 text-text-muted" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" />
+                          )}
+                        </div>
+                      </button>
+
+                      {/* Order detail */}
+                      <AnimatePresence>
+                        {expandedId === order.id && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden border-t border-border"
+                          >
+                            <div className="px-5 py-4">
+                              {/* Delivery info */}
+                              <div className="mb-4 grid gap-2 rounded-xl bg-surface-alt p-4 text-sm sm:grid-cols-2">
                                 <div>
                                   <span className="text-text-muted">
-                                    Trạng thái TT:{' '}
+                                    Người nhận:{' '}
                                   </span>
                                   <span className="font-medium text-text-primary">
-                                    {order.paymentStatus}
+                                    {order.customerName}
                                   </span>
                                 </div>
-                              )}
-                            </div>
-
-                            {/* Cancel reason info */}
-                            {order.status === 'CANCELLED' &&
-                              order.cancelReason && (
-                                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm">
-                                  <p className="font-medium text-red-700">
-                                    Lý do hủy:{' '}
-                                    <span className="font-normal text-red-600">
-                                      {order.cancelReason}
+                                <div>
+                                  <span className="text-text-muted">
+                                    Điện thoại:{' '}
+                                  </span>
+                                  <span className="font-medium text-text-primary">
+                                    {order.phone}
+                                  </span>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <span className="text-text-muted">
+                                    Địa chỉ:{' '}
+                                  </span>
+                                  <span className="font-medium text-text-primary">
+                                    {order.address}, {order.ward},{' '}
+                                    {order.district}, {order.city}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-text-muted">
+                                    Thanh toán:{' '}
+                                  </span>
+                                  <span className="font-medium text-text-primary">
+                                    {order.paymentMethod}
+                                  </span>
+                                </div>
+                                {order.paymentStatus && (
+                                  <div>
+                                    <span className="text-text-muted">
+                                      Trạng thái TT:{' '}
                                     </span>
-                                  </p>
-                                  {order.cancelledBy && (
-                                    <p className="mt-1 text-xs text-red-400">
-                                      Hủy bởi:{' '}
-                                      {order.cancelledBy === 'ADMIN'
-                                        ? 'Quản trị viên'
-                                        : 'Bạn'}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-
-                            {/* Items */}
-                            <div className="space-y-3">
-                              {order.items.map((item) => (
-                                <div
-                                  key={item.productId}
-                                  className="flex items-center gap-3"
-                                >
-                                  <img
-                                    src={item.productImage}
-                                    alt={item.productName}
-                                    className="h-12 w-12 rounded-lg object-contain bg-surface-alt p-1"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-medium text-text-primary">
-                                      {item.productName}
-                                    </p>
-                                    <p className="text-xs text-text-muted">
-                                      {item.brand} · x{item.quantity}
-                                    </p>
+                                    <span className="font-medium text-text-primary">
+                                      {order.paymentStatus}
+                                    </span>
                                   </div>
-                                  <span className="shrink-0 text-sm font-semibold text-text-primary">
-                                    {(
-                                      item.price * item.quantity
-                                    ).toLocaleString('vi-VN')}
-                                    ₫
+                                )}
+                              </div>
+
+                              {/* Cancel reason info */}
+                              {order.status === 'CANCELLED' &&
+                                order.cancelReason && (
+                                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm">
+                                    <p className="font-medium text-red-700">
+                                      Lý do hủy:{' '}
+                                      <span className="font-normal text-red-600">
+                                        {order.cancelReason}
+                                      </span>
+                                    </p>
+                                    {order.cancelledBy && (
+                                      <p className="mt-1 text-xs text-red-400">
+                                        Hủy bởi:{' '}
+                                        {order.cancelledBy === 'ADMIN'
+                                          ? 'Quản trị viên'
+                                          : 'Bạn'}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+
+                              {/* Items */}
+                              <div className="space-y-3">
+                                {order.items.map((item) => (
+                                  <div
+                                    key={item.productId}
+                                    className="flex items-center gap-3"
+                                  >
+                                    <img
+                                      src={item.productImage}
+                                      alt={item.productName}
+                                      className="h-12 w-12 rounded-lg object-contain bg-surface-alt p-1"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-medium text-text-primary">
+                                        {item.productName}
+                                      </p>
+                                      <p className="text-xs text-text-muted">
+                                        {item.brand} · x{item.quantity}
+                                      </p>
+                                    </div>
+                                    <span className="shrink-0 text-sm font-semibold text-text-primary">
+                                      {(
+                                        item.price * item.quantity
+                                      ).toLocaleString('vi-VN')}
+                                      ₫
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Total */}
+                              <div className="mt-4 space-y-1 border-t border-border pt-4 text-sm">
+                                <div className="flex justify-between text-text-secondary">
+                                  <span>Tạm tính</span>
+                                  <span>
+                                    {order.subtotal.toLocaleString('vi-VN')}₫
                                   </span>
                                 </div>
-                              ))}
-                            </div>
-
-                            {/* Total */}
-                            <div className="mt-4 space-y-1 border-t border-border pt-4 text-sm">
-                              <div className="flex justify-between text-text-secondary">
-                                <span>Tạm tính</span>
-                                <span>
-                                  {order.subtotal.toLocaleString('vi-VN')}₫
-                                </span>
-                              </div>
-                              <div className="flex justify-between text-text-secondary">
-                                <span>Phí vận chuyển</span>
-                                <span>
-                                  {order.shippingFee === 0
-                                    ? 'Miễn phí'
-                                    : `${order.shippingFee.toLocaleString('vi-VN')}₫`}
-                                </span>
-                              </div>
-                              {order.discount > 0 && (
                                 <div className="flex justify-between text-text-secondary">
-                                  <span>Giảm giá</span>
-                                  <span className="text-green-600">
-                                    -{order.discount.toLocaleString('vi-VN')}₫
+                                  <span>Phí vận chuyển</span>
+                                  <span>
+                                    {order.shippingFee === 0
+                                      ? 'Miễn phí'
+                                      : `${order.shippingFee.toLocaleString('vi-VN')}₫`}
                                   </span>
+                                </div>
+                                {order.discount > 0 && (
+                                  <div className="flex justify-between text-text-secondary">
+                                    <span>Giảm giá</span>
+                                    <span className="text-green-600">
+                                      -{order.discount.toLocaleString('vi-VN')}₫
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between font-bold text-text-primary">
+                                  <span>Tổng cộng</span>
+                                  <span className="text-brand">
+                                    {order.total.toLocaleString('vi-VN')}₫
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Cancel button */}
+                              {canCancel(order.status) && (
+                                <div className="mt-4 flex justify-end border-t border-border pt-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => setCancellingOrderId(order.id)}
+                                    className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                    Hủy đơn hàng
+                                  </button>
                                 </div>
                               )}
-                              <div className="flex justify-between font-bold text-text-primary">
-                                <span>Tổng cộng</span>
-                                <span className="text-brand">
-                                  {order.total.toLocaleString('vi-VN')}₫
-                                </span>
-                              </div>
                             </div>
-
-                            {/* Cancel button */}
-                            {canCancel(order.status) && (
-                              <div className="mt-4 flex justify-end border-t border-border pt-4">
-                                <button
-                                  type="button"
-                                  onClick={() => setCancellingOrderId(order.id)}
-                                  className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100"
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                  Hủy đơn hàng
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </motion.div>
