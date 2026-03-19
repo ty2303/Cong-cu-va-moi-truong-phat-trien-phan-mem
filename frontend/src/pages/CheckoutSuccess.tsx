@@ -1,4 +1,4 @@
-import { Check, ShoppingBag } from 'lucide-react';
+import { Check, ClipboardList, ShoppingBag } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link, Navigate, useLocation } from 'react-router';
 
@@ -44,39 +44,46 @@ function CheckoutSuccess() {
           </motion.div>
         </div>
 
-        <h1 className="font-display text-3xl font-bold text-text-primary">
-          Đặt hàng thành công!
-        </h1>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+        >
+          <h1 className="font-display text-3xl font-bold text-text-primary">
+            Đặt hàng thành công!
+          </h1>
 
-        <p className="mt-4 text-text-secondary">
-          Cảm ơn bạn đã tin tưởng và mua hàng. Mã đơn hàng của bạn là{' '}
-          <span className="font-mono font-bold text-text-primary">
-            #{orderId}
-          </span>
-          .
-        </p>
+          <p className="mt-4 text-text-secondary">
+            Cảm ơn bạn đã tin tưởng và mua hàng. Mã đơn hàng của bạn là{' '}
+            <span className="font-mono font-bold text-text-primary">
+              #{orderId.slice(-8).toUpperCase()}
+            </span>
+            .
+          </p>
 
-        <p className="mt-2 text-sm text-text-muted">
-          Thông tin chi tiết đơn hàng đã được gửi vào email của bạn. Chúng tôi
-          sẽ liên hệ sớm để xác nhận.
-        </p>
+          <p className="mt-2 text-sm text-text-muted">
+            Chúng tôi sẽ liên hệ sớm để xác nhận và giao hàng đến bạn.
+          </p>
 
-        {/* Actions */}
-        <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <Link
-            to="/products"
-            className="btn-primary flex items-center justify-center gap-2 no-underline"
-          >
-            <ShoppingBag className="h-4 w-4" />
-            Tiếp tục mua sắm
-          </Link>
-          <Link
-            to="/"
-            className="btn-outline flex items-center justify-center gap-2 no-underline"
-          >
-            Về trang chủ
-          </Link>
-        </div>
+          {/* Actions */}
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <Link
+              to="/profile"
+              state={{ tab: 'orders' }}
+              className="btn-primary flex items-center justify-center gap-2 no-underline"
+            >
+              <ClipboardList className="h-4 w-4" />
+              Xem đơn hàng
+            </Link>
+            <Link
+              to="/products"
+              className="btn-outline flex items-center justify-center gap-2 no-underline"
+            >
+              <ShoppingBag className="h-4 w-4" />
+              Tiếp tục mua sắm
+            </Link>
+          </div>
+        </motion.div>
       </motion.div>
     </section>
   );

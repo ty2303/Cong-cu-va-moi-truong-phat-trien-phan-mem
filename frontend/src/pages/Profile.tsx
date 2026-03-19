@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 
 import apiClient from '@/api/client';
 import { ENDPOINTS } from '@/api/endpoints';
@@ -37,7 +38,11 @@ export const Component = Profile;
 function Profile() {
   const { user } = useAuthStore();
   const addToast = useToastStore((s) => s.addToast);
-  const [activeTab, setActiveTab] = useState<'account' | 'orders'>('account');
+  const location = useLocation();
+  const locationState = location.state as { tab?: string } | null;
+  const [activeTab, setActiveTab] = useState<'account' | 'orders'>(
+    locationState?.tab === 'orders' ? 'orders' : 'account',
+  );
 
   // Profile
   const [profile, setProfile] = useState<UserProfile | null>(null);
