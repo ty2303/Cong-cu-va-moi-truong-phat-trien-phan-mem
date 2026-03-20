@@ -30,6 +30,7 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   shippingFee: number;
+  discount: number;
   total: number;
   createdAt: string;
   paymentStatus?: string;
@@ -49,6 +50,7 @@ export interface CreateOrderPayload {
   note?: string;
   paymentMethod: string;
   items: OrderItem[];
+  discount?: number;
 }
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
