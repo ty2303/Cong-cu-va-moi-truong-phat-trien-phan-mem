@@ -131,6 +131,79 @@ const emptyProductForm: CreateProductPayload = {
   stock: 0,
 };
 
+type ProductFormField =
+  | 'name'
+  | 'brand'
+  | 'categoryId'
+  | 'price'
+  | 'originalPrice'
+  | 'image'
+  | 'rating'
+  | 'badge'
+  | 'specs'
+  | 'stock';
+
+type ProductFormErrors = Partial<Record<ProductFormField, string>>;
+
+const PRODUCT_FIELD_LABELS: Record<ProductFormField, string> = {
+  name: 'Tên sản phẩm',
+  brand: 'Thương hiệu',
+  categoryId: 'Danh mục',
+  price: 'Giá bán',
+  originalPrice: 'Giá gốc',
+  image: 'Ảnh sản phẩm',
+  rating: 'Đánh giá',
+  badge: 'Badge',
+  specs: 'Thông số kỹ thuật',
+  stock: 'Tồn kho',
+};
+
+const validateProductForm = (
+  form: CreateProductPayload,
+): ProductFormErrors => {
+  const errors: ProductFormErrors = {};
+
+  if (!form.name.trim()) {
+    errors.name = 'Vui lòng nhập tên sản phẩm.';
+  }
+
+  if (!form.brand.trim()) {
+    errors.brand = 'Vui lòng nhập thương hiệu.';
+  }
+
+  if (!form.categoryId?.trim()) {
+    errors.categoryId = 'Vui lòng chọn danh mục cho sản phẩm.';
+  }
+
+  if (!form.image.trim()) {
+    errors.image = 'Vui lòng nhập hoặc tải lên ảnh sản phẩm.';
+  }
+
+  if (!Number.isFinite(form.price) || form.price <= 0) {
+    errors.price = 'Giá bán phải lớn hơn 0.';
+  }
+
+  if (
+    form.originalPrice !== undefined &&
+    (!Number.isFinite(form.originalPrice) || form.originalPrice < form.price)
+  ) {
+    errors.originalPrice = 'Giá gốc phải lớn hơn hoặc bằng giá bán.';
+  }
+
+  if (
+    form.rating !== undefined &&
+    (!Number.isFinite(form.rating) || form.rating < 0 || form.rating > 5)
+  ) {
+    errors.rating = 'Rating phải nằm trong khoảng 0 đến 5.';
+  }
+
+  if (form.stock !== undefined && (!Number.isInteger(form.stock) || form.stock < 0)) {
+    errors.stock = 'Tồn kho phải là số nguyên không âm.';
+  }
+
+  return errors;
+};
+
 /** Valid order status transitions (mirrors backend logic). */
 const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ['CONFIRMED', 'CANCELLED'],
@@ -172,6 +245,9 @@ export function Component() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] =
     useState<CreateProductPayload>(emptyProductForm);
+  const [productFormErrors, setProductFormErrors] = useState<ProductFormErrors>(
+    {},
+  );
   const [savingProduct, setSavingProduct] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
@@ -265,6 +341,7 @@ export function Component() {
   const openCreateProduct = () => {
     setEditingProduct(null);
     setProductForm(emptyProductForm);
+    setProductFormErrors({});
     setShowProductForm(true);
   };
 
@@ -282,15 +359,60 @@ export function Component() {
       specs: p.specs ?? '',
       stock: p.stock ?? 0,
     });
+    setProductFormErrors({});
     setShowProductForm(true);
   };
 
+  const handleProductFieldChange = <K extends ProductFormField>(
+    field: K,
+    value: CreateProductPayload[K],
+  ) => {
+    setProductForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+    setProductFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
   const handleSaveProduct = async () => {
+    const trimmedForm: CreateProductPayload = {
+      ...productForm,
+      name: productForm.name.trim(),
+      brand: productForm.brand.trim(),
+      categoryId: productForm.categoryId?.trim(),
+      image: productForm.image.trim(),
+      badge: productForm.badge?.trim(),
+      specs: productForm.specs?.trim(),
+    };
+    const errors = validateProductForm(trimmedForm);
+
+    if (Object.keys(errors).length > 0) {
+      setProductForm(trimmedForm);
+      setProductFormErrors(errors);
+      const firstField = Object.keys(errors)[0] as ProductFormField;
+      addToast(
+        'error',
+        errors[firstField] ||
+          `Vui lòng kiểm tra lại trường ${PRODUCT_FIELD_LABELS[firstField]}.`,
+      );
+      return;
+    }
+
     setSavingProduct(true);
     try {
       const payload = {
-        ...productForm,
-        categoryId: productForm.categoryId || undefined,
+        ...trimmedForm,
+        categoryId: trimmedForm.categoryId,
+        originalPrice: trimmedForm.originalPrice || undefined,
+        badge: trimmedForm.badge || undefined,
+        specs: trimmedForm.specs || undefined,
+        rating: trimmedForm.rating ?? 0,
+        stock: trimmedForm.stock ?? 0,
       };
       if (editingProduct) {
         await apiClient.put(
@@ -300,6 +422,7 @@ export function Component() {
       } else {
         await apiClient.post(ENDPOINTS.PRODUCTS.BASE, payload);
       }
+      setProductFormErrors({});
       setShowProductForm(false);
       fetchDashboardMetrics();
       fetchCategories();
@@ -331,7 +454,7 @@ export function Component() {
         { headers: { 'Content-Type': 'multipart/form-data' } },
       );
       const url = res.data.data;
-      setProductForm((prev) => ({ ...prev, image: url }));
+      handleProductFieldChange('image', url);
       addToast('success', 'Upload ảnh thành công');
     } catch (err: unknown) {
       const axiosErr = err as ApiError;
@@ -497,6 +620,8 @@ export function Component() {
   const topSellingProducts = overviewMetrics.charts.topSellingProducts;
   const orderStatusData = overviewMetrics.charts.orderStatus;
   const recentOrders = overviewMetrics.recentOrders;
+  const productFormPreviewErrors = validateProductForm(productForm);
+  const isProductFormValid = Object.keys(productFormPreviewErrors).length === 0;
 
   const stats = [
     {
@@ -1393,8 +1518,9 @@ export function Component() {
 
       {/* ── Product Modal ── */}
       {showProductForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 backdrop-blur-sm">
+          <div className="flex min-h-full items-center justify-center">
+            <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
               <div>
                 <h3 className="font-bold text-gray-800">
@@ -1404,13 +1530,16 @@ export function Component() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowProductForm(false)}
+                onClick={() => {
+                  setProductFormErrors({});
+                  setShowProductForm(false);
+                }}
                 className="cursor-pointer rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-3 px-6 py-5">
+            <div className="space-y-4 overflow-y-auto px-6 py-5">
               {(
                 [
                   ['name', 'Tên sản phẩm *'],
@@ -1431,13 +1560,19 @@ export function Component() {
                       ] as string) ?? ''
                     }
                     onChange={(e) =>
-                      setProductForm({
-                        ...productForm,
-                        [field]: e.target.value,
-                      })
+                      handleProductFieldChange(field, e.target.value)
                     }
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none transition focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                    className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 ${
+                      productFormErrors[field]
+                        ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                        : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                    }`}
                   />
+                  {productFormErrors[field] && (
+                    <p className="mt-1 text-xs text-red-500">
+                      {productFormErrors[field]}
+                    </p>
+                  )}
                 </div>
               ))}
 
@@ -1453,12 +1588,13 @@ export function Component() {
                       placeholder="URL ảnh hoặc upload bên dưới"
                       value={productForm.image}
                       onChange={(e) =>
-                        setProductForm({
-                          ...productForm,
-                          image: e.target.value,
-                        })
+                        handleProductFieldChange('image', e.target.value)
                       }
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none transition focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                      className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 ${
+                        productFormErrors.image
+                          ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                          : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                      }`}
                     />
                   </div>
                   <label
@@ -1499,14 +1635,17 @@ export function Component() {
                     />
                     <button
                       type="button"
-                      onClick={() =>
-                        setProductForm({ ...productForm, image: '' })
-                      }
+                      onClick={() => handleProductFieldChange('image', '')}
                       className="absolute -right-2 -top-2 cursor-pointer rounded-full bg-red-500 p-0.5 text-white hover:bg-red-600"
                     >
                       <X className="h-3 w-3" />
                     </button>
                   </div>
+                )}
+                {productFormErrors.image && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {productFormErrors.image}
+                  </p>
                 )}
               </div>
 
@@ -1517,12 +1656,13 @@ export function Component() {
                 <select
                   value={productForm.categoryId ?? ''}
                   onChange={(e) =>
-                    setProductForm({
-                      ...productForm,
-                      categoryId: e.target.value,
-                    })
+                    handleProductFieldChange('categoryId', e.target.value)
                   }
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                  className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:bg-white focus:ring-2 ${
+                    productFormErrors.categoryId
+                      ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                      : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                  }`}
                 >
                   <option value="">-- Không có danh mục --</option>
                   {categories.map((c) => (
@@ -1531,6 +1671,11 @@ export function Component() {
                     </option>
                   ))}
                 </select>
+                {productFormErrors.categoryId && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {productFormErrors.categoryId}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1565,23 +1710,43 @@ export function Component() {
                             ] ?? 0)
                       }
                       onChange={(e) =>
-                        setProductForm({
-                          ...productForm,
-                          [field]: e.target.value
-                            ? Number(e.target.value)
-                            : undefined,
-                        })
+                        handleProductFieldChange(
+                          field,
+                          e.target.value ? Number(e.target.value) : undefined,
+                        )
                       }
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                      className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:bg-white focus:ring-2 ${
+                        productFormErrors[field]
+                          ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                          : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                      }`}
                     />
+                    {productFormErrors[field] && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {productFormErrors[field]}
+                      </p>
+                    )}
                   </div>
                 ))}
+              </div>
+              <div className="rounded-xl border border-dashed border-purple-200 bg-purple-50/50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">
+                  Trạng thái form
+                </p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {isProductFormValid
+                    ? 'Form đã đủ điều kiện để lưu.'
+                    : 'Cần điền đủ tên, thương hiệu, ảnh, danh mục và giá bán hợp lệ trước khi lưu.'}
+                </p>
               </div>
             </div>
             <div className="flex gap-3 border-t border-gray-100 px-6 py-4">
               <button
                 type="button"
-                onClick={() => setShowProductForm(false)}
+                onClick={() => {
+                  setProductFormErrors({});
+                  setShowProductForm(false);
+                }}
                 className="flex-1 cursor-pointer rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50"
               >
                 Hủy
@@ -1589,8 +1754,8 @@ export function Component() {
               <button
                 type="button"
                 onClick={handleSaveProduct}
-                disabled={savingProduct}
-                className="flex-1 cursor-pointer rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-purple-200 hover:shadow-lg disabled:opacity-60"
+                disabled={savingProduct || uploadingImage || !isProductFormValid}
+                className="flex-1 cursor-pointer rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-purple-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {savingProduct
                   ? 'Đang lưu...'
@@ -1600,6 +1765,7 @@ export function Component() {
               </button>
             </div>
           </div>
+        </div>
         </div>
       )}
 
