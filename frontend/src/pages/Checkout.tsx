@@ -27,8 +27,7 @@ export const Component = Checkout;
 type PaymentMethod = 'COD' | 'MOMO';
 
 /** Số điện thoại Việt Nam hợp lệ: 03x, 05x, 07x, 08x, 09x */
-const VN_PHONE_RE =
-  /^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[0-9]|9[0-9])[0-9]{7}$/;
+const VN_PHONE_RE = /^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[0-9]|9[0-9])[0-9]{7}$/;
 
 const inputBase =
   'w-full rounded-xl border bg-surface-alt px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 transition-colors';
@@ -53,8 +52,7 @@ function validate(fd: FormData): FieldErrors {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(get('email')))
     errors.email = 'Email không hợp lệ';
 
-  if (get('name').length < 2)
-    errors.name = 'Vui lòng nhập họ và tên đầy đủ';
+  if (get('name').length < 2) errors.name = 'Vui lòng nhập họ và tên đầy đủ';
 
   if (!VN_PHONE_RE.test(get('phone').replace(/[\s-]/g, '')))
     errors.phone = 'Số điện thoại không đúng định dạng (VD: 0912 345 678)';
@@ -224,7 +222,8 @@ function Checkout() {
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } } };
       setError(
-        axiosErr.response?.data?.message ?? 'Đặt hàng thất bại. Vui lòng thử lại.',
+        axiosErr.response?.data?.message ??
+          'Đặt hàng thất bại. Vui lòng thử lại.',
       );
     } finally {
       setLoading(false);

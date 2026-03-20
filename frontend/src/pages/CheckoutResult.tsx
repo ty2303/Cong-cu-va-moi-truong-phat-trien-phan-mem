@@ -89,8 +89,8 @@ function CheckoutResult() {
                 <span className="font-mono font-bold text-text-primary">
                   #{shortOrderId}
                 </span>{' '}
-                đã được thanh toán qua MoMo. Chúng tôi sẽ xử lý và giao hàng
-                sớm nhất có thể.
+                đã được thanh toán qua MoMo. Chúng tôi sẽ xử lý và giao hàng sớm
+                nhất có thể.
               </p>
             </div>
 
@@ -122,8 +122,8 @@ function CheckoutResult() {
 
             {!order && hasAttemptedLoad && !isLoading && (
               <div className="mt-6 rounded-2xl border border-border bg-surface-alt px-4 py-3 text-sm text-text-muted">
-                Chi tiết đơn hàng chưa tải được đầy đủ. Bạn vẫn có thể xem
-                lại trong trang đơn hàng của mình.
+                Chi tiết đơn hàng chưa tải được đầy đủ. Bạn vẫn có thể xem lại
+                trong trang đơn hàng của mình.
               </div>
             )}
 
@@ -331,13 +331,13 @@ function CheckoutResult() {
           <span className="font-mono font-bold text-text-primary">
             #{shortOrderId}
           </span>{' '}
-          không thành công. Đơn hàng của bạn đã bị huỷ và hàng đã được hoàn
-          lại kho.
+          không thành công. Đơn hàng của bạn đã bị huỷ và hàng đã được hoàn lại
+          kho.
         </p>
 
         <div className="mt-8 rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-sm text-red-700">
-          Bạn có thể đặt lại đơn hàng bất kỳ lúc nào. Nếu tiền đã bị trừ,
-          MoMo sẽ hoàn lại trong vòng 1–3 ngày làm việc.
+          Bạn có thể đặt lại đơn hàng bất kỳ lúc nào. Nếu tiền đã bị trừ, MoMo
+          sẽ hoàn lại trong vòng 1–3 ngày làm việc.
         </div>
 
         <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:justify-center">

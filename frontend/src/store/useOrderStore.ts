@@ -23,7 +23,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   fetchOrders: async () => {
     set({ isLoading: true });
     try {
-      const res = await apiClient.get<ApiResponse<Order[]>>(ENDPOINTS.ORDERS.MY);
+      const res = await apiClient.get<ApiResponse<Order[]>>(
+        ENDPOINTS.ORDERS.MY,
+      );
       set({ orders: res.data.data });
     } catch {
       set({ orders: [] });

@@ -86,13 +86,17 @@ afterEach(() => {
 
 describe('Profile order history summary', () => {
   test('shows the summed item quantity in the collapsed order row', async () => {
-    const [{ Component: Profile }, { default: apiClient }, { useAuthStore }, { useOrderStore }] =
-      await Promise.all([
-        import('@/pages/Profile'),
-        import('@/api/client'),
-        import('@/store/useAuthStore'),
-        import('@/store/useOrderStore'),
-      ]);
+    const [
+      { Component: Profile },
+      { default: apiClient },
+      { useAuthStore },
+      { useOrderStore },
+    ] = await Promise.all([
+      import('@/pages/Profile'),
+      import('@/api/client'),
+      import('@/store/useAuthStore'),
+      import('@/store/useOrderStore'),
+    ]);
 
     vi.mocked(apiClient.get).mockResolvedValue({
       data: {

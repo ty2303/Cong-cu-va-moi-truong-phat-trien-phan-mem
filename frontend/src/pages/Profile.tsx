@@ -426,7 +426,9 @@ function Profile() {
                       <button
                         type="button"
                         onClick={() =>
-                          setExpandedId(expandedId === order.id ? null : order.id)
+                          setExpandedId(
+                            expandedId === order.id ? null : order.id,
+                          )
                         }
                         className="flex w-full cursor-pointer items-center justify-between px-5 py-4 text-left transition-colors hover:bg-surface-alt"
                       >
@@ -606,7 +608,9 @@ function Profile() {
                                 <div className="mt-4 flex justify-end border-t border-border pt-4">
                                   <button
                                     type="button"
-                                    onClick={() => setCancellingOrderId(order.id)}
+                                    onClick={() =>
+                                      setCancellingOrderId(order.id)
+                                    }
                                     className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100"
                                   >
                                     <XCircle className="h-4 w-4" />
