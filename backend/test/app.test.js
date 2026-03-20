@@ -190,6 +190,30 @@ test("admin middleware allows admin users", async () => {
 	});
 });
 
+test("GET /api/admin/dashboard-metrics returns aggregated admin overview", async () => {
+	await withServer(async (port) => {
+		const response = await fetch(
+			`http://127.0.0.1:${port}/api/admin/dashboard-metrics`,
+			{
+				headers: {
+					Authorization: "Bearer admin-token",
+				},
+			},
+		);
+		const body = await response.json();
+
+		assert.equal(response.status, 200);
+		assert.equal(body.data.totals.users, db.users.length);
+		assert.equal(body.data.totals.products, db.products.length);
+		assert.equal(body.data.totals.categories, db.categories.length);
+		assert.equal(body.data.totals.orders, db.orders.length);
+		assert.ok(Array.isArray(body.data.charts.revenueByDay));
+		assert.equal(body.data.charts.revenueByDay.length, 7);
+		assert.ok(Array.isArray(body.data.recentOrders));
+		assert.equal(body.data.recentOrders.length, Math.min(5, db.orders.length));
+	});
+});
+
 test("realtime sends order status updates to the order owner", async () => {
 	await withServer(async (port) => {
 		const ws = await connectAndSubscribe(

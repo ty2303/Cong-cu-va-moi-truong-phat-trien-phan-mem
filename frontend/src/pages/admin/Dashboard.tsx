@@ -64,6 +64,60 @@ interface ApiError {
   };
 }
 
+interface DashboardMetrics {
+  totals: {
+    users: number;
+    userUsers: number;
+    products: number;
+    categories: number;
+    orders: number;
+    pendingOrders: number;
+    revenue: number;
+  };
+  rates: {
+    cancellationRate: number;
+  };
+  charts: {
+    revenueByDay: Array<{ label: string; revenue: number }>;
+    revenueByMonth: Array<{ label: string; revenue: number }>;
+    orderStatus: Array<{ name: string; value: number; color: string }>;
+    topSellingProducts: Array<{
+      name: string;
+      shortName: string;
+      sold: number;
+      revenue: number;
+    }>;
+  };
+  recentOrders: Array<{
+    id: string;
+    customerName: string;
+    total: number;
+    status: OrderStatus;
+  }>;
+}
+
+const EMPTY_DASHBOARD_METRICS: DashboardMetrics = {
+  totals: {
+    users: 0,
+    userUsers: 0,
+    products: 0,
+    categories: 0,
+    orders: 0,
+    pendingOrders: 0,
+    revenue: 0,
+  },
+  rates: {
+    cancellationRate: 0,
+  },
+  charts: {
+    revenueByDay: [],
+    revenueByMonth: [],
+    orderStatus: [],
+    topSellingProducts: [],
+  },
+  recentOrders: [],
+};
+
 const emptyProductForm: CreateProductPayload = {
   name: '',
   brand: '',
@@ -134,6 +188,8 @@ export function Component() {
   // Orders
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
 
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -148,6 +204,22 @@ export function Component() {
       })
       .finally(() => setLoadingUsers(false));
   }, []);
+
+  const fetchDashboardMetrics = () => {
+    setLoadingMetrics(true);
+    apiClient
+      .get<ApiResponse<DashboardMetrics>>(ENDPOINTS.ADMIN.DASHBOARD_METRICS)
+      .then((res) => setMetrics(res.data.data))
+      .catch((err: unknown) => {
+        const axiosErr = err as ApiError;
+        addToast(
+          'error',
+          axiosErr.response?.data?.message ||
+            'Không thể tải số liệu tổng quan admin.',
+        );
+      })
+      .finally(() => setLoadingMetrics(false));
+  };
 
   const fetchProducts = () => {
     setLoadingProducts(true);
@@ -178,6 +250,7 @@ export function Component() {
   };
 
   useEffect(() => {
+    fetchDashboardMetrics();
     fetchProducts();
     fetchCategories();
     fetchOrders();
@@ -228,9 +301,19 @@ export function Component() {
         await apiClient.post(ENDPOINTS.PRODUCTS.BASE, payload);
       }
       setShowProductForm(false);
+      fetchDashboardMetrics();
+      fetchCategories();
       fetchProducts();
-    } catch (err) {
-      console.error('Lỗi khi lưu sản phẩm:', err);
+      addToast(
+        'success',
+        editingProduct ? 'Đã cập nhật sản phẩm' : 'Đã thêm sản phẩm',
+      );
+    } catch (err: unknown) {
+      const axiosErr = err as ApiError;
+      addToast(
+        'error',
+        axiosErr.response?.data?.message || 'Lưu sản phẩm thất bại.',
+      );
     } finally {
       setSavingProduct(false);
     }
@@ -263,6 +346,8 @@ export function Component() {
     if (!window.confirm('Xác nhận xóa sản phẩm này?')) return;
     try {
       await apiClient.delete(ENDPOINTS.PRODUCTS.BY_ID(id));
+      fetchDashboardMetrics();
+      fetchCategories();
       fetchProducts();
       addToast('success', 'Đã xóa sản phẩm');
     } catch (err: unknown) {
@@ -301,7 +386,19 @@ export function Component() {
         await apiClient.post(ENDPOINTS.CATEGORIES.BASE, categoryForm);
       }
       setShowCategoryForm(false);
+      fetchDashboardMetrics();
       fetchCategories();
+      fetchProducts();
+      addToast(
+        'success',
+        editingCategory ? 'Đã cập nhật danh mục' : 'Đã thêm danh mục',
+      );
+    } catch (err: unknown) {
+      const axiosErr = err as ApiError;
+      addToast(
+        'error',
+        axiosErr.response?.data?.message || 'Không thể lưu danh mục.',
+      );
     } finally {
       setSavingCategory(false);
     }
@@ -330,6 +427,7 @@ export function Component() {
       await apiClient.delete(ENDPOINTS.CATEGORIES.BY_ID(id), {
         params: force ? { force: true } : {},
       });
+      fetchDashboardMetrics();
       fetchCategories();
       fetchProducts();
       addToast('success', `Đã xóa danh mục "${category.name}"`);
@@ -345,6 +443,7 @@ export function Component() {
       await apiClient.patch(ENDPOINTS.ORDERS.STATUS(id), null, {
         params: { status },
       });
+      fetchDashboardMetrics();
       fetchOrders();
       addToast(
         'success',
@@ -359,7 +458,8 @@ export function Component() {
     }
   };
 
-  const userCount = users.filter((u) => u.role === 'USER').length;
+  const userCount =
+    (metrics ?? EMPTY_DASHBOARD_METRICS).totals.userUsers;
 
   const handleUpdateRole = async (
     userId: string,
@@ -375,6 +475,7 @@ export function Component() {
       setUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
       );
+      fetchDashboardMetrics();
     } catch (err: unknown) {
       const axiosErr = err as ApiError;
       const msg =
@@ -383,101 +484,24 @@ export function Component() {
       addToast('error', msg);
     }
   };
-  const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-  const pendingOrders = orders.filter((o) => o.status === 'PENDING').length;
-  const cancelledOrders = orders.filter((o) => o.status === 'CANCELLED').length;
-  const deliveredOrders = orders.filter((o) => o.status === 'DELIVERED').length;
-  const cancellationRate = orders.length
-    ? Number(((cancelledOrders / orders.length) * 100).toFixed(1))
-    : 0;
-  const revenueByDay = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - index));
-    const key = date.toISOString().slice(0, 10);
-    const total = orders
-      .filter((order) => order.createdAt.slice(0, 10) === key)
-      .reduce((sum, order) => sum + order.total, 0);
-
-    return {
-      label: date.toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-      }),
-      revenue: Math.round(total),
-    };
-  });
-  const revenueByMonth = Array.from({ length: 6 }, (_, index) => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - (5 - index), 1);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const total = orders
-      .filter((order) => order.createdAt.slice(0, 7) === key)
-      .reduce((sum, order) => sum + order.total, 0);
-
-    return {
-      label: date.toLocaleDateString('vi-VN', {
-        month: '2-digit',
-        year: '2-digit',
-      }),
-      revenue: Math.round(total),
-    };
-  });
-  const topSellingProducts = Object.values(
-    orders.reduce<
-      Record<string, { name: string; sold: number; revenue: number }>
-    >((acc, order) => {
-      order.items.forEach((item) => {
-        const existing = acc[item.productId] ?? {
-          name: item.productName,
-          sold: 0,
-          revenue: 0,
-        };
-        existing.sold += item.quantity;
-        existing.revenue += item.quantity * item.price;
-        acc[item.productId] = existing;
-      });
-      return acc;
-    }, {}),
-  )
-    .sort((a, b) => b.sold - a.sold)
-    .slice(0, 5)
-    .map((item) => ({
-      ...item,
-      shortName:
-        item.name.length > 18
-          ? item.name.slice(0, 18).trimEnd() + '…'
-          : item.name,
-    }));
-  const orderStatusData = [
-    {
-      name: 'Đã giao',
-      value: deliveredOrders,
-      color: '#22c55e',
-    },
-    {
-      name: 'Chờ xử lý',
-      value: pendingOrders,
-      color: '#f59e0b',
-    },
-    {
-      name: 'Đã hủy',
-      value: cancelledOrders,
-      color: '#ef4444',
-    },
-    {
-      name: 'Khác',
-      value: Math.max(
-        orders.length - deliveredOrders - pendingOrders - cancelledOrders,
-        0,
-      ),
-      color: '#6366f1',
-    },
-  ].filter((item) => item.value > 0);
+  const overviewMetrics = metrics ?? EMPTY_DASHBOARD_METRICS;
+  const totalUsersValue = overviewMetrics.totals.users;
+  const totalProductsValue = overviewMetrics.totals.products;
+  const totalCategoriesValue = overviewMetrics.totals.categories;
+  const totalOrdersValue = overviewMetrics.totals.orders;
+  const pendingOrders = overviewMetrics.totals.pendingOrders;
+  const totalRevenue = overviewMetrics.totals.revenue;
+  const cancellationRate = overviewMetrics.rates.cancellationRate;
+  const revenueByDay = overviewMetrics.charts.revenueByDay;
+  const revenueByMonth = overviewMetrics.charts.revenueByMonth;
+  const topSellingProducts = overviewMetrics.charts.topSellingProducts;
+  const orderStatusData = overviewMetrics.charts.orderStatus;
+  const recentOrders = overviewMetrics.recentOrders;
 
   const stats = [
     {
       label: 'Tổng người dùng',
-      value: totalUsers,
+      value: totalUsersValue,
       icon: Users,
       gradient: 'from-purple-500 to-purple-700',
       bg: 'bg-purple-50',
@@ -486,16 +510,16 @@ export function Component() {
     },
     {
       label: 'Sản phẩm',
-      value: products.length,
+      value: totalProductsValue,
       icon: Package,
       gradient: 'from-blue-400 to-blue-600',
       bg: 'bg-blue-50',
       text: 'text-blue-600',
-      change: `${categories.length} danh mục`,
+      change: `${totalCategoriesValue} danh mục`,
     },
     {
       label: 'Đơn hàng',
-      value: orders.length,
+      value: totalOrdersValue,
       icon: ShoppingBag,
       gradient: 'from-green-400 to-green-600',
       bg: 'bg-green-50',
@@ -636,6 +660,12 @@ export function Component() {
           {/* ── Overview ── */}
           {tab === 'overview' && (
             <div className="space-y-6">
+              {loadingMetrics ? (
+                <div className="flex items-center justify-center rounded-2xl bg-white py-24 shadow-sm ring-1 ring-gray-100">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-200 border-t-purple-600" />
+                </div>
+              ) : (
+                <>
               {/* Banner */}
               <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 p-6 text-white shadow-lg">
                 <div className="relative z-10">
@@ -880,7 +910,7 @@ export function Component() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {orders.slice(0, 5).map((o) => (
+                      {recentOrders.map((o) => (
                         <tr key={o.id}>
                           <td className="py-3 pr-4 font-mono text-xs text-gray-400">
                             #{o.id.slice(-6).toUpperCase()}
@@ -902,13 +932,15 @@ export function Component() {
                       ))}
                     </tbody>
                   </table>
-                  {orders.length === 0 && (
+                  {recentOrders.length === 0 && (
                     <p className="py-8 text-center text-sm text-gray-400">
                       Chưa có đơn hàng nào
                     </p>
                   )}
                 </div>
               </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1352,6 +1384,7 @@ export function Component() {
         <ExcelImportModal
           onClose={() => setShowExcelImport(false)}
           onSuccess={() => {
+            fetchDashboardMetrics();
             fetchProducts();
             setShowExcelImport(false);
           }}

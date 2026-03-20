@@ -3,6 +3,9 @@
  * Organize by domain/feature for easy discovery.
  */
 export const ENDPOINTS = {
+  ADMIN: {
+    DASHBOARD_METRICS: '/admin/dashboard-metrics',
+  },
   AUTH: {
     LOGIN: '/auth/login',
     REGISTER: '/auth/register',

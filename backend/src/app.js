@@ -5,6 +5,7 @@ import morgan from "morgan";
 import { fail, ok } from "./lib/apiResponse.js";
 import { attachUser } from "./middleware/auth.js";
 import { authRouter } from "./routes/auth.js";
+import { adminRouter } from "./routes/admin.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { momoRouter } from "./routes/momo.js";
 import { ordersRouter } from "./routes/orders.js";
@@ -38,6 +39,7 @@ app.get("/oauth2/authorization/google", (_req, res) => {
 });
 
 app.use("/api/auth", authRouter);
+app.use("/api/admin", adminRouter);
 app.use("/api/products", productsRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/orders", ordersRouter);
