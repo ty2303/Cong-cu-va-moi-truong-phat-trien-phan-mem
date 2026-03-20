@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { MemoryRouter } from 'react-router';
 
 import type { Order } from '@/types/order';
 
@@ -131,7 +132,11 @@ describe('Profile order history summary', () => {
       cancelOrder: vi.fn().mockResolvedValue(undefined),
     });
 
-    render(<Profile />);
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Đơn hàng' }));
 
