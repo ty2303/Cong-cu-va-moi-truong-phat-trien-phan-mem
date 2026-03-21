@@ -117,6 +117,44 @@ async function connectAndSubscribe(port, token, destination) {
 	return ws;
 }
 
+function createTestOrder(overrides = {}) {
+	const order = {
+		id: `order-test-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+		userId: "user-1",
+		email: "demo@example.com",
+		customerName: "Demo User",
+		phone: "0900000001",
+		address: "123 Duong Nguyen Hue",
+		city: "TP.HCM",
+		district: "Quan 1",
+		ward: "Ben Nghe",
+		note: "Test order",
+		paymentMethod: "COD",
+		status: "PENDING",
+		items: [
+			{
+				productId: "prod-iphone-15",
+				productName: "iPhone 15 Pro",
+				price: 27990000,
+				quantity: 1,
+			},
+		],
+		subtotal: 27990000,
+		shippingFee: 0,
+		total: 27990000,
+		createdAt: new Date().toISOString(),
+		paymentStatus: "UNPAID",
+		...overrides,
+	};
+
+	db.orders.unshift(order);
+	return order;
+}
+
+function removeTestOrder(orderId) {
+	db.orders = db.orders.filter((order) => order.id !== orderId);
+}
+
 test("GET /health returns service status", async () => {
 	await withServer(async (port) => {
 		const response = await fetch(`http://127.0.0.1:${port}/health`);
@@ -216,6 +254,7 @@ test("GET /api/admin/dashboard-metrics returns aggregated admin overview", async
 
 test("realtime sends order status updates to the order owner", async () => {
 	await withServer(async (port) => {
+		const order = createTestOrder({ status: "CONFIRMED" });
 		const ws = await connectAndSubscribe(
 			port,
 			"demo-token",
@@ -224,7 +263,7 @@ test("realtime sends order status updates to the order owner", async () => {
 
 		try {
 			const responsePromise = fetch(
-				`http://127.0.0.1:${port}/api/orders/order-1/status`,
+				`http://127.0.0.1:${port}/api/orders/${order.id}/status`,
 				{
 					method: "PATCH",
 					headers: {
@@ -248,12 +287,146 @@ test("realtime sends order status updates to the order owner", async () => {
 			assert.equal(frame.command, "MESSAGE");
 			assert.equal(frame.headers.destination, "/user/queue/order-status");
 			assert.deepEqual(payload, {
-				orderId: "order-1",
+				orderId: order.id,
 				newStatus: "SHIPPING",
 			});
 		} finally {
-			db.orders[0].status = "DELIVERED";
+			removeTestOrder(order.id);
 			ws.close();
+		}
+	});
+});
+
+test("PATCH /api/orders/:id/status rejects invalid order status values", async () => {
+	await withServer(async (port) => {
+		const order = createTestOrder();
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/orders/${order.id}/status`,
+				{
+					method: "PATCH",
+					headers: {
+						Authorization: "Bearer admin-token",
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({ status: "ARCHIVED" }),
+				},
+			);
+			const body = await response.json();
+
+			assert.equal(response.status, 400);
+			assert.equal(body.message, "Trang thai don hang khong hop le");
+			assert.equal(order.status, "PENDING");
+		} finally {
+			removeTestOrder(order.id);
+		}
+	});
+});
+
+test("PATCH /api/orders/:id/status rejects invalid transition order flow", async () => {
+	await withServer(async (port) => {
+		const order = createTestOrder({ status: "DELIVERED" });
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/orders/${order.id}/status`,
+				{
+					method: "PATCH",
+					headers: {
+						Authorization: "Bearer admin-token",
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({ status: "SHIPPING" }),
+				},
+			);
+			const body = await response.json();
+
+			assert.equal(response.status, 400);
+			assert.equal(
+				body.message,
+				"Khong the cap nhat trang thai don hang theo luong nay",
+			);
+			assert.equal(order.status, "DELIVERED");
+		} finally {
+			removeTestOrder(order.id);
+		}
+	});
+});
+
+test("PATCH /api/orders/:id/cancel allows the order owner to cancel pending orders", async () => {
+	await withServer(async (port) => {
+		const order = createTestOrder({ status: "CONFIRMED" });
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/orders/${order.id}/cancel?reason=Khong%20muon%20mua%20nua`,
+				{
+					method: "PATCH",
+					headers: {
+						Authorization: "Bearer demo-token",
+					},
+				},
+			);
+			const body = await response.json();
+
+			assert.equal(response.status, 200);
+			assert.equal(body.data.status, "CANCELLED");
+			assert.equal(body.data.cancelledBy, "USER");
+			assert.equal(body.data.paymentStatus, "FAILED");
+			assert.equal(body.data.cancelReason, "Khong muon mua nua");
+		} finally {
+			removeTestOrder(order.id);
+		}
+	});
+});
+
+test("PATCH /api/orders/:id/cancel rejects cancelling another user's order", async () => {
+	await withServer(async (port) => {
+		const order = createTestOrder({ userId: "admin-1" });
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/orders/${order.id}/cancel?reason=Khac`,
+				{
+					method: "PATCH",
+					headers: {
+						Authorization: "Bearer demo-token",
+					},
+				},
+			);
+			const body = await response.json();
+
+			assert.equal(response.status, 403);
+			assert.equal(body.message, "Forbidden");
+			assert.equal(order.status, "PENDING");
+		} finally {
+			removeTestOrder(order.id);
+		}
+	});
+});
+
+test("PATCH /api/orders/:id/cancel rejects non-cancellable order statuses", async () => {
+	await withServer(async (port) => {
+		const order = createTestOrder({ status: "DELIVERED" });
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/orders/${order.id}/cancel?reason=Khac`,
+				{
+					method: "PATCH",
+					headers: {
+						Authorization: "Bearer demo-token",
+					},
+				},
+			);
+			const body = await response.json();
+
+			assert.equal(response.status, 400);
+			assert.equal(body.message, "Khong the huy don hang o trang thai nay");
+			assert.equal(order.status, "DELIVERED");
+		} finally {
+			removeTestOrder(order.id);
 		}
 	});
 });
