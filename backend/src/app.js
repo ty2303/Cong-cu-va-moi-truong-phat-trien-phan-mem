@@ -35,7 +35,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/oauth2/authorization/google", (_req, res) => {
-  res.redirect(`${process.env.FRONTEND_URL ?? "http://localhost:5173"}/login`);
+  res.redirect("/api/auth/google");
 });
 
 app.use("/api/auth", authRouter);

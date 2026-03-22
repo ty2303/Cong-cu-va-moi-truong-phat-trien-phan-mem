@@ -167,6 +167,23 @@ function removeTestOrder(orderId) {
 	db.orders = db.orders.filter((order) => order.id !== orderId);
 }
 
+function removeTestUserByEmail(email) {
+	db.users = db.users.filter((user) => user.email !== email);
+}
+
+function createMockJsonResponse(payload, ok = true, status = 200) {
+	return {
+		ok,
+		status,
+		async json() {
+			return payload;
+		},
+		async text() {
+			return JSON.stringify(payload);
+		},
+	};
+}
+
 test("GET /health returns service status", async () => {
 	await withServer(async (port) => {
 		const response = await fetch(`http://127.0.0.1:${port}/health`);
@@ -556,6 +573,133 @@ test("admin middleware allows admin users", async () => {
 		assert.equal(body.status, 201);
 		assert.equal(body.message, "Tao san pham thanh cong");
 		assert.equal(body.data.name, "Test product");
+	});
+});
+
+test("GET /api/auth/google redirects to Google OAuth consent screen", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const location = response.headers.get("location");
+
+			assert.equal(response.status, 302);
+			assert.ok(location);
+			const redirectUrl = new URL(location);
+			assert.equal(
+				redirectUrl.origin,
+				"https://accounts.google.com",
+			);
+			assert.equal(
+				redirectUrl.searchParams.get("client_id"),
+				"google-client-id",
+			);
+			assert.equal(
+				redirectUrl.searchParams.get("redirect_uri"),
+				`http://127.0.0.1:${port}/api/auth/google/callback`,
+			);
+			assert.equal(redirectUrl.searchParams.get("response_type"), "code");
+			assert.ok(redirectUrl.searchParams.get("state"));
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to frontend callback with app token", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+		const originalFetch = global.fetch;
+		const googleEmail = "google-user@example.com";
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		global.fetch = async (input, init) => {
+			const url = String(input);
+			if (url.startsWith(`http://127.0.0.1:${port}`)) {
+				return originalFetch(input, init);
+			}
+
+			if (url === "https://oauth2.googleapis.com/token") {
+				return createMockJsonResponse({ access_token: "google-access-token" });
+			}
+
+			if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+				return createMockJsonResponse({
+					email: googleEmail,
+					email_verified: true,
+					name: "Google User",
+				});
+			}
+
+			throw new Error(`Unexpected fetch url: ${url}`);
+		};
+
+		try {
+			const startResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const startLocation = startResponse.headers.get("location");
+			assert.ok(startLocation);
+			const state = new URL(startLocation).searchParams.get("state");
+			assert.ok(state);
+
+			const callbackResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+				{ redirect: "manual" },
+			);
+			const callbackLocation = callbackResponse.headers.get("location");
+
+			assert.equal(callbackResponse.status, 302);
+			assert.ok(callbackLocation);
+			const redirectUrl = new URL(callbackLocation);
+			assert.equal(
+				`${redirectUrl.origin}${redirectUrl.pathname}`,
+				"http://localhost:5173/oauth2/callback",
+			);
+			assert.equal(redirectUrl.searchParams.get("email"), googleEmail);
+			assert.equal(redirectUrl.searchParams.get("role"), "USER");
+			assert.ok(redirectUrl.searchParams.get("token"));
+			assert.ok(redirectUrl.searchParams.get("id"));
+			assert.ok(redirectUrl.searchParams.get("username"));
+		} finally {
+			global.fetch = originalFetch;
+			removeTestUserByEmail(googleEmail);
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
 	});
 });
 

@@ -88,6 +88,20 @@ export function Component() {
     setError('');
   }, [isLogin]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get('error');
+
+    if (oauthError === 'google_not_configured') {
+      setError('Google OAuth chưa được cấu hình trên máy chủ.');
+      return;
+    }
+
+    if (oauthError === 'google_failed') {
+      setError('Đăng nhập với Google thất bại. Vui lòng thử lại.');
+    }
+  }, []);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
