@@ -974,18 +974,26 @@ export function Component() {
 
                     {review.analysisResults &&
                       review.analysisResults.length > 0 && (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {review.analysisResults.map((result, index) => (
-                            <span
-                              key={`${review.id}-${result.aspect}-${index}`}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${getSentimentBadgeClass(result.sentiment)}`}
-                              title={`Độ tin cậy ${(result.confidence * 100).toFixed(0)}%`}
-                            >
-                              <span>{result.aspect}</span>
-                              <span className="opacity-70">•</span>
-                              <span>{getSentimentLabel(result.sentiment)}</span>
-                            </span>
-                          ))}
+                        <div className="mt-4">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
+                            Phân tích cảm xúc
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {review.analysisResults.map((result, index) => (
+                              <span
+                                key={`${review.id}-${result.aspect}-${index}`}
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${getSentimentBadgeClass(result.sentiment)}`}
+                                title={`Độ tin cậy ${(result.confidence * 100).toFixed(0)}%`}
+                              >
+                                <span>{result.aspect}</span>
+                                <span className="opacity-70">•</span>
+                                <span>{getSentimentLabel(result.sentiment)}</span>
+                                <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-[11px] font-semibold">
+                                  {(result.confidence * 100).toFixed(0)}%
+                                </span>
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       )}
 
