@@ -6,6 +6,7 @@ import {
   Heart,
   Loader2,
   Package,
+  Pencil,
   RotateCcw,
   Send,
   Shield,
@@ -28,7 +29,11 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
 import type { Product } from '@/types/product';
-import type { CreateReviewPayload, Review } from '@/types/review';
+import type {
+  CreateReviewPayload,
+  Review,
+  ReviewAnalysisResult,
+} from '@/types/review';
 
 function getAverageRating(items: Review[]) {
   if (items.length === 0) return 0;
@@ -40,9 +45,33 @@ function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Không thể đọc tệp ảnh.'));
+    reader.onerror = () => reject(new Error('Khong the doc tep anh.'));
     reader.readAsDataURL(file);
   });
+}
+
+function getSentimentBadgeClass(sentiment: ReviewAnalysisResult['sentiment']) {
+  if (sentiment === 'positive') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  }
+
+  if (sentiment === 'negative') {
+    return 'border-red-200 bg-red-50 text-red-700';
+  }
+
+  return 'border-slate-200 bg-slate-100 text-slate-700';
+}
+
+function getSentimentLabel(sentiment: ReviewAnalysisResult['sentiment']) {
+  if (sentiment === 'positive') {
+    return 'Tích cực';
+  }
+
+  if (sentiment === 'negative') {
+    return 'Tiêu cực';
+  }
+
+  return 'Trung lập';
 }
 
 export function Component() {
@@ -68,8 +97,10 @@ export function Component() {
   const [reviewError, setReviewError] = useState('');
   const [reviewImages, setReviewImages] = useState<string[]>([]);
   const [uploadingReviewImage, setUploadingReviewImage] = useState(false);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
 
   const myReview = reviews.find((review) => review.userId === user?.id);
+  const isEditingReview = editingReviewId !== null;
 
   useEffect(() => {
     if (!id) return;
@@ -198,6 +229,51 @@ export function Component() {
     },
   ];
 
+  const resetReviewForm = () => {
+    setReviewComment('');
+    setReviewRating(5);
+    setReviewImages([]);
+    setReviewHover(0);
+    setReviewError('');
+    setEditingReviewId(null);
+  };
+
+  const handleEditReview = (review: Review) => {
+    setEditingReviewId(review.id);
+    setReviewRating(review.rating);
+    setReviewComment(review.comment);
+    setReviewImages(review.images ?? []);
+    setReviewHover(0);
+    setReviewError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleReviewImageUpload = async (file: File) => {
+    setReviewError('');
+    setUploadingReviewImage(true);
+
+    try {
+      const imageData = await fileToDataUrl(file);
+
+      const response = await apiClient.post<ApiResponse<string>>(
+        ENDPOINTS.REVIEWS.UPLOAD_IMAGE,
+        { imageData, folder: 'reviews' },
+      );
+
+      setReviewImages((current) => [...current, response.data.data]);
+    } catch (error: unknown) {
+      const axiosError = error as {
+        response?: { data?: { message?: string } };
+      };
+      setReviewError(
+        axiosError.response?.data?.message ??
+          'Không thể upload ảnh đánh giá.',
+      );
+    } finally {
+      setUploadingReviewImage(false);
+    }
+  };
+
   const handleSubmitReview = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -219,12 +295,22 @@ export function Component() {
         images: reviewImages.length > 0 ? reviewImages : undefined,
       };
 
-      const response = await apiClient.post<ApiResponse<Review>>(
-        ENDPOINTS.REVIEWS.BASE,
-        payload,
-      );
+      const response = isEditingReview
+        ? await apiClient.put<ApiResponse<Review>>(
+            ENDPOINTS.REVIEWS.UPDATE(editingReviewId),
+            payload,
+          )
+        : await apiClient.post<ApiResponse<Review>>(
+            ENDPOINTS.REVIEWS.BASE,
+            payload,
+          );
 
-      const nextReviews = [response.data.data, ...reviews];
+      const savedReview = response.data.data;
+      const nextReviews = isEditingReview
+        ? reviews.map((review) =>
+            review.id === savedReview.id ? savedReview : review,
+          )
+        : [savedReview, ...reviews];
       const nextAverage = getAverageRating(nextReviews);
 
       setReviews(nextReviews);
@@ -236,9 +322,7 @@ export function Component() {
             }
           : current,
       );
-      setReviewComment('');
-      setReviewRating(5);
-      setReviewImages([]);
+      resetReviewForm();
     } catch (error: unknown) {
       const axiosError = error as {
         response?: { data?: { message?: string } };
@@ -268,6 +352,9 @@ export function Component() {
             }
           : current,
       );
+      if (editingReviewId === reviewId) {
+        resetReviewForm();
+      }
     } catch (error: unknown) {
       const axiosError = error as {
         response?: { data?: { message?: string } };
@@ -629,7 +716,7 @@ export function Component() {
                 {reviews.length} đánh giá
               </span>
             </div>
-            {isLoggedIn && !isAdmin && !myReview && (
+            {isLoggedIn && !isAdmin && (!myReview || isEditingReview) && (
               <motion.form
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -637,7 +724,9 @@ export function Component() {
                 className="mb-8 rounded-[1.75rem] border border-border bg-surface p-6"
               >
                 <p className="font-medium text-text-primary">
-                  Đánh giá từ tài khoản của bạn
+                  {isEditingReview
+                    ? 'Chỉnh sửa đánh giá của bạn'
+                    : 'Đánh giá từ tài khoản của bạn'}
                 </p>
 
                 <div className="mt-4 flex items-center gap-1">
@@ -739,19 +828,10 @@ export function Component() {
                               return;
                             }
 
-                            setReviewError('');
-                            setUploadingReviewImage(true);
-
                             try {
-                              const dataUrl = await fileToDataUrl(file);
-                              setReviewImages((current) => [
-                                ...current,
-                                dataUrl,
-                              ]);
+                              await handleReviewImageUpload(file);
                             } catch {
                               setReviewError('Không thể đọc ảnh đã chọn.');
-                            } finally {
-                              setUploadingReviewImage(false);
                             }
                           }}
                         />
@@ -770,7 +850,16 @@ export function Component() {
                   </p>
                 )}
 
-                <div className="mt-5 flex justify-end">
+                <div className="mt-5 flex justify-end gap-3">
+                  {isEditingReview && (
+                    <button
+                      type="button"
+                      onClick={resetReviewForm}
+                      className="btn-outline"
+                    >
+                      Hủy sửa
+                    </button>
+                  )}
                   <motion.button
                     type="submit"
                     disabled={reviewSubmitting || !reviewComment.trim()}
@@ -783,7 +872,7 @@ export function Component() {
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Gửi đánh giá
+                    {isEditingReview ? 'Lưu đánh giá' : 'Gửi đánh giá'}
                   </motion.button>
                 </div>
               </motion.form>
@@ -805,8 +894,17 @@ export function Component() {
 
             {myReview && (
               <div className="mb-8 rounded-[1.75rem] border border-emerald-200 bg-emerald-50/70 px-5 py-4 text-sm text-emerald-700">
-                Bạn đã gửi đánh giá cho sản phẩm này. Muốn thay đổi nội dung thì
-                hãy xóa đánh giá hiện tại và gửi lại.
+                Bạn đã gửi đánh giá cho sản phẩm này. Bạn có thể chỉnh sửa trực tiếp hoặc xóa đánh giá hiện tại.
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => handleEditReview(myReview)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Chỉnh sửa đánh giá
+                  </button>
+                </div>
               </div>
             )}
 
@@ -874,6 +972,23 @@ export function Component() {
                       {review.comment}
                     </p>
 
+                    {review.analysisResults &&
+                      review.analysisResults.length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {review.analysisResults.map((result, index) => (
+                            <span
+                              key={`${review.id}-${result.aspect}-${index}`}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${getSentimentBadgeClass(result.sentiment)}`}
+                              title={`Độ tin cậy ${(result.confidence * 100).toFixed(0)}%`}
+                            >
+                              <span>{result.aspect}</span>
+                              <span className="opacity-70">•</span>
+                              <span>{getSentimentLabel(result.sentiment)}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
                     {review.images && review.images.length > 0 && (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {review.images.map((image, index) => (
@@ -929,3 +1044,7 @@ export function Component() {
     </div>
   );
 }
+
+
+
+

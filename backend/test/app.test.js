@@ -19,6 +19,18 @@ async function withServer(run) {
 	}
 }
 
+async function withAbsaServer(handler, run) {
+	const server = http.createServer(handler);
+	server.listen(0);
+	const { port } = server.address();
+
+	try {
+		await run(`http://127.0.0.1:${port}/predict`);
+	} finally {
+		server.close();
+	}
+}
+
 function buildFrame(command, headers = {}, body = "") {
 	const lines = [command];
 	for (const [key, value] of Object.entries(headers)) {
@@ -163,6 +175,160 @@ test("GET /health returns service status", async () => {
 		assert.equal(response.status, 200);
 		assert.equal(body.status, 200);
 		assert.equal(body.data.service, "backend");
+	});
+});
+
+test("POST /api/reviews stores sentiment analysis results when ABSA responds successfully", async () => {
+	await withAbsaServer((req, res) => {
+		if (req.method !== "POST" || req.url !== "/predict") {
+			res.writeHead(404).end();
+			return;
+		}
+
+		res.writeHead(200, { "Content-Type": "application/json" });
+		res.end(
+			JSON.stringify({
+				results: [
+					{ aspect: "Battery", sentiment: "positive", confidence: 0.92 },
+					{ aspect: "Price", sentiment: "negative", confidence: 0.81 },
+				],
+			}),
+		);
+	}, async (absaUrl) => {
+		const previousUrl = process.env.ABSA_SERVICE_URL;
+		process.env.ABSA_SERVICE_URL = absaUrl;
+
+		try {
+			await withServer(async (port) => {
+				const response = await fetch(`http://127.0.0.1:${port}/api/reviews`, {
+					method: "POST",
+					headers: {
+						Authorization: "Bearer admin-token",
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						productId: "prod-iphone-15",
+						rating: 4,
+						comment: "Pin trau nhung gia hoi cao",
+						images: [],
+					}),
+				});
+				const body = await response.json();
+
+				assert.equal(response.status, 201);
+				assert.equal(body.data.analysisResults.length, 2);
+				assert.deepEqual(body.data.analysisResults[0], {
+					aspect: "Battery",
+					sentiment: "positive",
+					confidence: 0.92,
+				});
+
+				db.reviews = db.reviews.filter((review) => review.id !== body.data.id);
+				const product = db.products.find((item) => item.id === "prod-iphone-15");
+				if (product) {
+					product.rating = 5;
+				}
+			});
+		} finally {
+			if (previousUrl) {
+				process.env.ABSA_SERVICE_URL = previousUrl;
+			} else {
+				delete process.env.ABSA_SERVICE_URL;
+			}
+		}
+	});
+});
+
+test("POST /api/reviews still saves review when ABSA service is unavailable", async () => {
+	const previousUrl = process.env.ABSA_SERVICE_URL;
+	process.env.ABSA_SERVICE_URL = "http://127.0.0.1:65500/predict";
+
+	try {
+		await withServer(async (port) => {
+			const response = await fetch(`http://127.0.0.1:${port}/api/reviews`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer admin-token",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					productId: "prod-galaxy-s25",
+					rating: 5,
+					comment: "Man hinh dep va may chay muot",
+				}),
+			});
+			const body = await response.json();
+
+			assert.equal(response.status, 201);
+			assert.deepEqual(body.data.analysisResults, []);
+
+			db.reviews = db.reviews.filter((review) => review.id !== body.data.id);
+			const product = db.products.find((item) => item.id === "prod-galaxy-s25");
+			if (product) {
+				product.rating = 4.8;
+			}
+		});
+	} finally {
+		if (previousUrl) {
+			process.env.ABSA_SERVICE_URL = previousUrl;
+		} else {
+			delete process.env.ABSA_SERVICE_URL;
+		}
+	}
+});
+
+test("PUT /api/reviews/:id updates review content and recalculates analysis results", async () => {
+	const existingReview = db.reviews.find((review) => review.id === "review-1");
+	assert.ok(existingReview);
+	const snapshot = structuredClone(existingReview);
+
+	await withAbsaServer((req, res) => {
+		if (req.method !== "POST" || req.url !== "/predict") {
+			res.writeHead(404).end();
+			return;
+		}
+
+		res.writeHead(200, { "Content-Type": "application/json" });
+		res.end(
+			JSON.stringify({
+				results: [{ aspect: "Battery", sentiment: "neutral", confidence: 0.77 }],
+			}),
+		);
+	}, async (absaUrl) => {
+		const previousUrl = process.env.ABSA_SERVICE_URL;
+		process.env.ABSA_SERVICE_URL = absaUrl;
+
+		try {
+			await withServer(async (port) => {
+				const response = await fetch(`http://127.0.0.1:${port}/api/reviews/review-1`, {
+					method: "PUT",
+					headers: {
+						Authorization: "Bearer demo-token",
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						productId: "prod-iphone-15",
+						rating: 3,
+						comment: "Pin tam on, can dung them",
+						images: ["data:image/png;base64,ZmFrZQ=="],
+					}),
+				});
+				const body = await response.json();
+
+				assert.equal(response.status, 200);
+				assert.equal(body.data.rating, 3);
+				assert.equal(body.data.comment, "Pin tam on, can dung them");
+				assert.equal(body.data.analysisResults.length, 1);
+				assert.equal(body.data.analysisResults[0].sentiment, "neutral");
+			});
+		} finally {
+			Object.assign(existingReview, snapshot);
+			if (previousUrl) {
+				process.env.ABSA_SERVICE_URL = previousUrl;
+			} else {
+				delete process.env.ABSA_SERVICE_URL;
+			}
+		}
 	});
 });
 
