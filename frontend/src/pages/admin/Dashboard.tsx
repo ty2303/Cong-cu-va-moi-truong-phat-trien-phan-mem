@@ -64,6 +64,60 @@ interface ApiError {
   };
 }
 
+interface DashboardMetrics {
+  totals: {
+    users: number;
+    userUsers: number;
+    products: number;
+    categories: number;
+    orders: number;
+    pendingOrders: number;
+    revenue: number;
+  };
+  rates: {
+    cancellationRate: number;
+  };
+  charts: {
+    revenueByDay: Array<{ label: string; revenue: number }>;
+    revenueByMonth: Array<{ label: string; revenue: number }>;
+    orderStatus: Array<{ name: string; value: number; color: string }>;
+    topSellingProducts: Array<{
+      name: string;
+      shortName: string;
+      sold: number;
+      revenue: number;
+    }>;
+  };
+  recentOrders: Array<{
+    id: string;
+    customerName: string;
+    total: number;
+    status: OrderStatus;
+  }>;
+}
+
+const EMPTY_DASHBOARD_METRICS: DashboardMetrics = {
+  totals: {
+    users: 0,
+    userUsers: 0,
+    products: 0,
+    categories: 0,
+    orders: 0,
+    pendingOrders: 0,
+    revenue: 0,
+  },
+  rates: {
+    cancellationRate: 0,
+  },
+  charts: {
+    revenueByDay: [],
+    revenueByMonth: [],
+    orderStatus: [],
+    topSellingProducts: [],
+  },
+  recentOrders: [],
+};
+
 const emptyProductForm: CreateProductPayload = {
   name: '',
   brand: '',
@@ -76,6 +130,94 @@ const emptyProductForm: CreateProductPayload = {
   specs: '',
   stock: 0,
 };
+
+type ProductFormField =
+  | 'name'
+  | 'brand'
+  | 'categoryId'
+  | 'price'
+  | 'originalPrice'
+  | 'image'
+  | 'rating'
+  | 'badge'
+  | 'specs'
+  | 'stock';
+
+type ProductFormErrors = Partial<Record<ProductFormField, string>>;
+
+const PRODUCT_FIELD_LABELS: Record<ProductFormField, string> = {
+  name: 'Tên sản phẩm',
+  brand: 'Thương hiệu',
+  categoryId: 'Danh mục',
+  price: 'Giá bán',
+  originalPrice: 'Giá gốc',
+  image: 'Ảnh sản phẩm',
+  rating: 'Đánh giá',
+  badge: 'Badge',
+  specs: 'Thông số kỹ thuật',
+  stock: 'Tồn kho',
+};
+
+const validateProductForm = (
+  form: CreateProductPayload,
+): ProductFormErrors => {
+  const errors: ProductFormErrors = {};
+
+  if (!form.name.trim()) {
+    errors.name = 'Vui lòng nhập tên sản phẩm.';
+  }
+
+  if (!form.brand.trim()) {
+    errors.brand = 'Vui lòng nhập thương hiệu.';
+  }
+
+  if (!form.categoryId?.trim()) {
+    errors.categoryId = 'Vui lòng chọn danh mục cho sản phẩm.';
+  }
+
+  if (!form.image.trim()) {
+    errors.image = 'Vui lòng nhập hoặc tải lên ảnh sản phẩm.';
+  }
+
+  if (!Number.isFinite(form.price) || form.price <= 0) {
+    errors.price = 'Giá bán phải lớn hơn 0.';
+  }
+
+  if (
+    form.originalPrice !== undefined &&
+    (!Number.isFinite(form.originalPrice) || form.originalPrice < form.price)
+  ) {
+    errors.originalPrice = 'Giá gốc phải lớn hơn hoặc bằng giá bán.';
+  }
+
+  if (
+    form.rating !== undefined &&
+    (!Number.isFinite(form.rating) || form.rating < 0 || form.rating > 5)
+  ) {
+    errors.rating = 'Rating phải nằm trong khoảng 0 đến 5.';
+  }
+
+  if (form.stock !== undefined && (!Number.isInteger(form.stock) || form.stock < 0)) {
+    errors.stock = 'Tồn kho phải là số nguyên không âm.';
+  }
+
+  return errors;
+};
+
+const normalizeProductForm = (
+  form: CreateProductPayload,
+): CreateProductPayload => ({
+  ...form,
+  name: form.name.trim(),
+  brand: form.brand.trim(),
+  categoryId: form.categoryId?.trim() || '',
+  image: form.image.trim(),
+  badge: form.badge?.trim() || '',
+  specs: form.specs?.trim() || '',
+  originalPrice: form.originalPrice ?? undefined,
+  rating: form.rating ?? 0,
+  stock: form.stock ?? 0,
+});
 
 /** Valid order status transitions (mirrors backend logic). */
 const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
@@ -118,6 +260,9 @@ export function Component() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] =
     useState<CreateProductPayload>(emptyProductForm);
+  const [productFormErrors, setProductFormErrors] = useState<ProductFormErrors>(
+    {},
+  );
   const [savingProduct, setSavingProduct] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
@@ -134,6 +279,8 @@ export function Component() {
   // Orders
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
 
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -148,6 +295,22 @@ export function Component() {
       })
       .finally(() => setLoadingUsers(false));
   }, []);
+
+  const fetchDashboardMetrics = () => {
+    setLoadingMetrics(true);
+    apiClient
+      .get<ApiResponse<DashboardMetrics>>(ENDPOINTS.ADMIN.DASHBOARD_METRICS)
+      .then((res) => setMetrics(res.data.data))
+      .catch((err: unknown) => {
+        const axiosErr = err as ApiError;
+        addToast(
+          'error',
+          axiosErr.response?.data?.message ||
+            'Không thể tải số liệu tổng quan admin.',
+        );
+      })
+      .finally(() => setLoadingMetrics(false));
+  };
 
   const fetchProducts = () => {
     setLoadingProducts(true);
@@ -178,6 +341,7 @@ export function Component() {
   };
 
   useEffect(() => {
+    fetchDashboardMetrics();
     fetchProducts();
     fetchCategories();
     fetchOrders();
@@ -189,9 +353,17 @@ export function Component() {
   };
 
   // Product handlers
+  const closeProductForm = () => {
+    setProductFormErrors({});
+    setEditingProduct(null);
+    setProductForm(emptyProductForm);
+    setShowProductForm(false);
+  };
+
   const openCreateProduct = () => {
     setEditingProduct(null);
     setProductForm(emptyProductForm);
+    setProductFormErrors({});
     setShowProductForm(true);
   };
 
@@ -209,15 +381,72 @@ export function Component() {
       specs: p.specs ?? '',
       stock: p.stock ?? 0,
     });
+    setProductFormErrors({});
     setShowProductForm(true);
   };
 
+  const handleProductFieldChange = <K extends ProductFormField>(
+    field: K,
+    value: CreateProductPayload[K],
+  ) => {
+    setProductForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+    setProductFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const handleNumericProductFieldChange = (
+    field: 'price' | 'originalPrice' | 'rating' | 'stock',
+    rawValue: string,
+  ) => {
+    if (rawValue === '') {
+      handleProductFieldChange(
+        field,
+        (field === 'originalPrice' ? undefined : 0) as CreateProductPayload[typeof field],
+      );
+      return;
+    }
+
+    const parsed = Number(rawValue);
+    handleProductFieldChange(
+      field,
+      Number.isFinite(parsed)
+        ? (parsed as CreateProductPayload[typeof field])
+        : ((field === 'originalPrice' ? undefined : 0) as CreateProductPayload[typeof field]),
+    );
+  };
+
   const handleSaveProduct = async () => {
+    const trimmedForm = normalizeProductForm(productForm);
+    const errors = validateProductForm(trimmedForm);
+
+    if (Object.keys(errors).length > 0) {
+      setProductForm(trimmedForm);
+      setProductFormErrors(errors);
+      const firstField = Object.keys(errors)[0] as ProductFormField;
+      addToast(
+        'error',
+        errors[firstField] ||
+          `Vui lòng kiểm tra lại trường ${PRODUCT_FIELD_LABELS[firstField]}.`,
+      );
+      return;
+    }
+
     setSavingProduct(true);
     try {
       const payload = {
-        ...productForm,
-        categoryId: productForm.categoryId || undefined,
+        ...trimmedForm,
+        originalPrice: trimmedForm.originalPrice ?? undefined,
+        badge: trimmedForm.badge || undefined,
+        specs: trimmedForm.specs || undefined,
+        rating: trimmedForm.rating ?? 0,
+        stock: trimmedForm.stock ?? 0,
       };
       if (editingProduct) {
         await apiClient.put(
@@ -227,10 +456,21 @@ export function Component() {
       } else {
         await apiClient.post(ENDPOINTS.PRODUCTS.BASE, payload);
       }
-      setShowProductForm(false);
+      setProductFormErrors({});
+      closeProductForm();
+      fetchDashboardMetrics();
+      fetchCategories();
       fetchProducts();
-    } catch (err) {
-      console.error('Lỗi khi lưu sản phẩm:', err);
+      addToast(
+        'success',
+        editingProduct ? 'Đã cập nhật sản phẩm' : 'Đã thêm sản phẩm',
+      );
+    } catch (err: unknown) {
+      const axiosErr = err as ApiError;
+      addToast(
+        'error',
+        axiosErr.response?.data?.message || 'Lưu sản phẩm thất bại.',
+      );
     } finally {
       setSavingProduct(false);
     }
@@ -248,7 +488,7 @@ export function Component() {
         { headers: { 'Content-Type': 'multipart/form-data' } },
       );
       const url = res.data.data;
-      setProductForm((prev) => ({ ...prev, image: url }));
+      handleProductFieldChange('image', url);
       addToast('success', 'Upload ảnh thành công');
     } catch (err: unknown) {
       const axiosErr = err as ApiError;
@@ -263,6 +503,8 @@ export function Component() {
     if (!window.confirm('Xác nhận xóa sản phẩm này?')) return;
     try {
       await apiClient.delete(ENDPOINTS.PRODUCTS.BY_ID(id));
+      fetchDashboardMetrics();
+      fetchCategories();
       fetchProducts();
       addToast('success', 'Đã xóa sản phẩm');
     } catch (err: unknown) {
@@ -301,7 +543,19 @@ export function Component() {
         await apiClient.post(ENDPOINTS.CATEGORIES.BASE, categoryForm);
       }
       setShowCategoryForm(false);
+      fetchDashboardMetrics();
       fetchCategories();
+      fetchProducts();
+      addToast(
+        'success',
+        editingCategory ? 'Đã cập nhật danh mục' : 'Đã thêm danh mục',
+      );
+    } catch (err: unknown) {
+      const axiosErr = err as ApiError;
+      addToast(
+        'error',
+        axiosErr.response?.data?.message || 'Không thể lưu danh mục.',
+      );
     } finally {
       setSavingCategory(false);
     }
@@ -330,6 +584,7 @@ export function Component() {
       await apiClient.delete(ENDPOINTS.CATEGORIES.BY_ID(id), {
         params: force ? { force: true } : {},
       });
+      fetchDashboardMetrics();
       fetchCategories();
       fetchProducts();
       addToast('success', `Đã xóa danh mục "${category.name}"`);
@@ -345,6 +600,7 @@ export function Component() {
       await apiClient.patch(ENDPOINTS.ORDERS.STATUS(id), null, {
         params: { status },
       });
+      fetchDashboardMetrics();
       fetchOrders();
       addToast(
         'success',
@@ -359,7 +615,8 @@ export function Component() {
     }
   };
 
-  const userCount = users.filter((u) => u.role === 'USER').length;
+  const userCount =
+    (metrics ?? EMPTY_DASHBOARD_METRICS).totals.userUsers;
 
   const handleUpdateRole = async (
     userId: string,
@@ -375,6 +632,7 @@ export function Component() {
       setUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
       );
+      fetchDashboardMetrics();
     } catch (err: unknown) {
       const axiosErr = err as ApiError;
       const msg =
@@ -383,101 +641,29 @@ export function Component() {
       addToast('error', msg);
     }
   };
-  const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-  const pendingOrders = orders.filter((o) => o.status === 'PENDING').length;
-  const cancelledOrders = orders.filter((o) => o.status === 'CANCELLED').length;
-  const deliveredOrders = orders.filter((o) => o.status === 'DELIVERED').length;
-  const cancellationRate = orders.length
-    ? Number(((cancelledOrders / orders.length) * 100).toFixed(1))
-    : 0;
-  const revenueByDay = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - index));
-    const key = date.toISOString().slice(0, 10);
-    const total = orders
-      .filter((order) => order.createdAt.slice(0, 10) === key)
-      .reduce((sum, order) => sum + order.total, 0);
-
-    return {
-      label: date.toLocaleDateString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-      }),
-      revenue: Math.round(total),
-    };
-  });
-  const revenueByMonth = Array.from({ length: 6 }, (_, index) => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - (5 - index), 1);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const total = orders
-      .filter((order) => order.createdAt.slice(0, 7) === key)
-      .reduce((sum, order) => sum + order.total, 0);
-
-    return {
-      label: date.toLocaleDateString('vi-VN', {
-        month: '2-digit',
-        year: '2-digit',
-      }),
-      revenue: Math.round(total),
-    };
-  });
-  const topSellingProducts = Object.values(
-    orders.reduce<
-      Record<string, { name: string; sold: number; revenue: number }>
-    >((acc, order) => {
-      order.items.forEach((item) => {
-        const existing = acc[item.productId] ?? {
-          name: item.productName,
-          sold: 0,
-          revenue: 0,
-        };
-        existing.sold += item.quantity;
-        existing.revenue += item.quantity * item.price;
-        acc[item.productId] = existing;
-      });
-      return acc;
-    }, {}),
-  )
-    .sort((a, b) => b.sold - a.sold)
-    .slice(0, 5)
-    .map((item) => ({
-      ...item,
-      shortName:
-        item.name.length > 18
-          ? item.name.slice(0, 18).trimEnd() + '…'
-          : item.name,
-    }));
-  const orderStatusData = [
-    {
-      name: 'Đã giao',
-      value: deliveredOrders,
-      color: '#22c55e',
-    },
-    {
-      name: 'Chờ xử lý',
-      value: pendingOrders,
-      color: '#f59e0b',
-    },
-    {
-      name: 'Đã hủy',
-      value: cancelledOrders,
-      color: '#ef4444',
-    },
-    {
-      name: 'Khác',
-      value: Math.max(
-        orders.length - deliveredOrders - pendingOrders - cancelledOrders,
-        0,
-      ),
-      color: '#6366f1',
-    },
-  ].filter((item) => item.value > 0);
+  const overviewMetrics = metrics ?? EMPTY_DASHBOARD_METRICS;
+  const totalUsersValue = overviewMetrics.totals.users;
+  const totalProductsValue = overviewMetrics.totals.products;
+  const totalCategoriesValue = overviewMetrics.totals.categories;
+  const totalOrdersValue = overviewMetrics.totals.orders;
+  const pendingOrders = overviewMetrics.totals.pendingOrders;
+  const totalRevenue = overviewMetrics.totals.revenue;
+  const cancellationRate = overviewMetrics.rates.cancellationRate;
+  const revenueByDay = overviewMetrics.charts.revenueByDay;
+  const revenueByMonth = overviewMetrics.charts.revenueByMonth;
+  const topSellingProducts = overviewMetrics.charts.topSellingProducts;
+  const orderStatusData = overviewMetrics.charts.orderStatus;
+  const recentOrders = overviewMetrics.recentOrders;
+  const normalizedProductForm = normalizeProductForm(productForm);
+  const productFormPreviewErrors = validateProductForm(normalizedProductForm);
+  const isProductFormValid = Object.keys(productFormPreviewErrors).length === 0;
+  const selectedCategory =
+    categories.find((category) => category.id === productForm.categoryId) ?? null;
 
   const stats = [
     {
       label: 'Tổng người dùng',
-      value: totalUsers,
+      value: totalUsersValue,
       icon: Users,
       gradient: 'from-purple-500 to-purple-700',
       bg: 'bg-purple-50',
@@ -486,16 +672,16 @@ export function Component() {
     },
     {
       label: 'Sản phẩm',
-      value: products.length,
+      value: totalProductsValue,
       icon: Package,
       gradient: 'from-blue-400 to-blue-600',
       bg: 'bg-blue-50',
       text: 'text-blue-600',
-      change: `${categories.length} danh mục`,
+      change: `${totalCategoriesValue} danh mục`,
     },
     {
       label: 'Đơn hàng',
-      value: orders.length,
+      value: totalOrdersValue,
       icon: ShoppingBag,
       gradient: 'from-green-400 to-green-600',
       bg: 'bg-green-50',
@@ -636,6 +822,12 @@ export function Component() {
           {/* ── Overview ── */}
           {tab === 'overview' && (
             <div className="space-y-6">
+              {loadingMetrics ? (
+                <div className="flex items-center justify-center rounded-2xl bg-white py-24 shadow-sm ring-1 ring-gray-100">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-200 border-t-purple-600" />
+                </div>
+              ) : (
+                <>
               {/* Banner */}
               <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 p-6 text-white shadow-lg">
                 <div className="relative z-10">
@@ -880,7 +1072,7 @@ export function Component() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {orders.slice(0, 5).map((o) => (
+                      {recentOrders.map((o) => (
                         <tr key={o.id}>
                           <td className="py-3 pr-4 font-mono text-xs text-gray-400">
                             #{o.id.slice(-6).toUpperCase()}
@@ -902,13 +1094,15 @@ export function Component() {
                       ))}
                     </tbody>
                   </table>
-                  {orders.length === 0 && (
+                  {recentOrders.length === 0 && (
                     <p className="py-8 text-center text-sm text-gray-400">
                       Chưa có đơn hàng nào
                     </p>
                   )}
                 </div>
               </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1352,6 +1546,7 @@ export function Component() {
         <ExcelImportModal
           onClose={() => setShowExcelImport(false)}
           onSuccess={() => {
+            fetchDashboardMetrics();
             fetchProducts();
             setShowExcelImport(false);
           }}
@@ -1360,212 +1555,339 @@ export function Component() {
 
       {/* ── Product Modal ── */}
       {showProductForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <div>
-                <h3 className="font-bold text-gray-800">
-                  {editingProduct ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm mới'}
-                </h3>
-                <p className="text-xs text-gray-400">Điền thông tin bên dưới</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowProductForm(false)}
-                className="cursor-pointer rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-3 px-6 py-5">
-              {(
-                [
-                  ['name', 'Tên sản phẩm *'],
-                  ['brand', 'Thương hiệu *'],
-                  ['specs', 'Thông số kỹ thuật'],
-                  ['badge', 'Badge (Hot / New / Sale...)'],
-                ] as const
-              ).map(([field, label]) => (
-                <div key={field}>
-                  <label className="mb-1 block text-xs font-semibold text-gray-500">
-                    {label}
-                  </label>
-                  <input
-                    type="text"
-                    value={
-                      ((productForm as unknown as Record<string, unknown>)[
-                        field
-                      ] as string) ?? ''
-                    }
-                    onChange={(e) =>
-                      setProductForm({
-                        ...productForm,
-                        [field]: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none transition focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                  />
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 backdrop-blur-sm">
+          <div className="flex min-h-full items-center justify-center">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleSaveProduct();
+              }}
+              className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                <div>
+                  <h3 className="font-bold text-gray-800">
+                    {editingProduct ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm mới'}
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    {editingProduct
+                      ? 'Chỉnh lại thông tin hiển thị, giá bán và tồn kho sản phẩm.'
+                      : 'Điền đầy đủ thông tin để tạo sản phẩm mới.'}
+                  </p>
                 </div>
-              ))}
-
-              {/* Image upload */}
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-500">
-                  Ảnh sản phẩm *
-                </label>
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      placeholder="URL ảnh hoặc upload bên dưới"
-                      value={productForm.image}
-                      onChange={(e) =>
-                        setProductForm({
-                          ...productForm,
-                          image: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none transition focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                    />
-                  </div>
-                  <label
-                    className={`flex cursor-pointer items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-                      uploadingImage
-                        ? 'bg-gray-100 text-gray-400 cursor-wait'
-                        : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
-                    }`}
-                  >
-                    {uploadingImage ? (
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-purple-200 border-t-purple-600" />
-                    ) : (
-                      <Upload className="h-4 w-4" />
-                    )}
-                    {uploadingImage ? 'Đang tải...' : 'Upload'}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="hidden"
-                      disabled={uploadingImage}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImageUpload(file);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                </div>
-                {productForm.image && (
-                  <div className="mt-2 relative inline-block">
-                    <img
-                      src={productForm.image}
-                      alt="Preview"
-                      className="h-24 w-24 rounded-xl border border-gray-200 object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setProductForm({ ...productForm, image: '' })
-                      }
-                      className="absolute -right-2 -top-2 cursor-pointer rounded-full bg-red-500 p-0.5 text-white hover:bg-red-600"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-500">
-                  Danh mục
-                </label>
-                <select
-                  value={productForm.categoryId ?? ''}
-                  onChange={(e) =>
-                    setProductForm({
-                      ...productForm,
-                      categoryId: e.target.value,
-                    })
-                  }
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                <button
+                  type="button"
+                  onClick={closeProductForm}
+                  className="cursor-pointer rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                 >
-                  <option value="">-- Không có danh mục --</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {(
-                  [
-                    ['price', 'Giá (₫)', 'number'],
-                    ['originalPrice', 'Giá gốc (₫)', 'number'],
-                    ['rating', 'Rating', 'number'],
-                    ['stock', 'Tồn kho', 'number'],
-                  ] as const
-                ).map(([field, label]) => (
-                  <div key={field}>
-                    <label className="mb-1 block text-xs font-semibold text-gray-500">
-                      {label}
-                    </label>
-                    <input
-                      type="number"
-                      step={field === 'rating' ? '0.1' : '1'}
-                      min="0"
-                      max={
-                        field === 'rating'
-                          ? '5'
-                          : field === 'stock'
-                            ? '99999'
-                            : undefined
-                      }
-                      value={
-                        field === 'originalPrice'
-                          ? (productForm.originalPrice ?? '')
-                          : ((productForm as unknown as Record<string, number>)[
+              <div className="grid gap-0 overflow-y-auto lg:grid-cols-[1.2fr_0.8fr]">
+                <div className="space-y-4 px-6 py-5">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {(
+                      [
+                        ['name', 'Tên sản phẩm *', 'VD: iPhone 15 Pro Max'],
+                        ['brand', 'Thương hiệu *', 'VD: Apple'],
+                        ['badge', 'Badge', 'VD: Mới, Giảm giá, Bán chạy'],
+                      ] as const
+                    ).map(([field, label, placeholder]) => (
+                      <div
+                        key={field}
+                        className={field === 'badge' ? 'sm:col-span-2' : undefined}
+                      >
+                        <label className="mb-1 block text-xs font-semibold text-gray-500">
+                          {label}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={placeholder}
+                          value={
+                            ((productForm as unknown as Record<string, unknown>)[
                               field
-                            ] ?? 0)
-                      }
-                      onChange={(e) =>
-                        setProductForm({
-                          ...productForm,
-                          [field]: e.target.value
-                            ? Number(e.target.value)
-                            : undefined,
-                        })
-                      }
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                    />
+                            ] as string) ?? ''
+                          }
+                          onChange={(e) =>
+                            handleProductFieldChange(field, e.target.value)
+                          }
+                          className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 ${
+                            productFormErrors[field]
+                              ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                              : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                          }`}
+                        />
+                        {productFormErrors[field] && (
+                          <p className="mt-1 text-xs text-red-500">
+                            {productFormErrors[field]}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-500">
+                      Thông số kỹ thuật
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="Mô tả ngắn cấu hình, màn hình, camera, bộ nhớ..."
+                      value={productForm.specs ?? ''}
+                      onChange={(e) =>
+                        handleProductFieldChange('specs', e.target.value)
+                      }
+                      className={`w-full resize-none rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 ${
+                        productFormErrors.specs
+                          ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                          : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                      }`}
+                    />
+                    {productFormErrors.specs && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {productFormErrors.specs}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-500">
+                      Ảnh sản phẩm *
+                    </label>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          placeholder="Dán URL ảnh hoặc dùng nút upload"
+                          value={productForm.image}
+                          onChange={(e) =>
+                            handleProductFieldChange('image', e.target.value)
+                          }
+                          className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:bg-white focus:ring-2 ${
+                            productFormErrors.image
+                              ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                              : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                          }`}
+                        />
+                      </div>
+                      <label
+                        className={`flex cursor-pointer items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                          uploadingImage
+                            ? 'cursor-wait bg-gray-100 text-gray-400'
+                            : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                        }`}
+                      >
+                        {uploadingImage ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-purple-200 border-t-purple-600" />
+                        ) : (
+                          <Upload className="h-4 w-4" />
+                        )}
+                        {uploadingImage ? 'Đang tải...' : 'Upload ảnh'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="hidden"
+                          disabled={uploadingImage}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) void handleImageUpload(file);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Ưu tiên ảnh vuông hoặc tỉ lệ gần vuông để hiển thị đẹp trong danh sách.
+                    </p>
+                    {productFormErrors.image && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {productFormErrors.image}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-gray-500">
+                      Danh mục *
+                    </label>
+                    <select
+                      value={productForm.categoryId ?? ''}
+                      onChange={(e) =>
+                        handleProductFieldChange('categoryId', e.target.value)
+                      }
+                      className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:bg-white focus:ring-2 ${
+                        productFormErrors.categoryId
+                          ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                          : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                      }`}
+                    >
+                      <option value="">-- Chọn danh mục --</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    {productFormErrors.categoryId && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {productFormErrors.categoryId}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {(
+                      [
+                        ['price', 'Giá bán (₫)'],
+                        ['originalPrice', 'Giá gốc (₫)'],
+                        ['rating', 'Rating'],
+                        ['stock', 'Tồn kho'],
+                      ] as const
+                    ).map(([field, label]) => (
+                      <div key={field}>
+                        <label className="mb-1 block text-xs font-semibold text-gray-500">
+                          {label}
+                        </label>
+                        <input
+                          type="number"
+                          step={field === 'rating' ? '0.1' : '1'}
+                          min="0"
+                          max={
+                            field === 'rating'
+                              ? '5'
+                              : field === 'stock'
+                                ? '99999'
+                                : undefined
+                          }
+                          value={
+                            field === 'originalPrice'
+                              ? (productForm.originalPrice ?? '')
+                              : ((productForm as unknown as Record<string, number>)[
+                                  field
+                                ] ?? 0)
+                          }
+                          onChange={(e) =>
+                            handleNumericProductFieldChange(field, e.target.value)
+                          }
+                          className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:bg-white focus:ring-2 ${
+                            productFormErrors[field]
+                              ? 'border-red-300 bg-red-50 text-red-900 focus:border-red-400 focus:ring-red-100'
+                              : 'border-gray-200 bg-gray-50 focus:border-purple-400 focus:ring-purple-100'
+                          }`}
+                        />
+                        {productFormErrors[field] && (
+                          <p className="mt-1 text-xs text-red-500">
+                            {productFormErrors[field]}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <aside className="border-t border-gray-100 bg-gray-50/70 px-6 py-5 lg:border-l lg:border-t-0">
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">
+                      Xem nhanh
+                    </p>
+                    <div className="mt-4 flex items-start gap-3">
+                      <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-gray-200 bg-gray-50">
+                        {productForm.image ? (
+                          <img
+                            src={productForm.image}
+                            alt={productForm.name || 'Preview'}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="px-3 text-center text-xs text-gray-400">
+                            Chưa có ảnh
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-2 text-sm font-semibold text-gray-800">
+                          {productForm.name.trim() || 'Tên sản phẩm sẽ hiển thị ở đây'}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {productForm.brand.trim() || 'Chưa có thương hiệu'}
+                        </p>
+                        <p className="mt-2 text-sm font-bold text-purple-600">
+                          {Number(productForm.price || 0).toLocaleString('vi-VN')}₫
+                        </p>
+                        {productForm.originalPrice ? (
+                          <p className="text-xs text-gray-400 line-through">
+                            {productForm.originalPrice.toLocaleString('vi-VN')}₫
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3 text-sm">
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2">
+                        <span className="text-gray-500">Danh mục</span>
+                        <span className="font-medium text-gray-700">
+                          {selectedCategory?.name || 'Chưa chọn'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2">
+                        <span className="text-gray-500">Rating</span>
+                        <span className="font-medium text-gray-700">
+                          {(productForm.rating ?? 0).toFixed(1)} / 5
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2">
+                        <span className="text-gray-500">Tồn kho</span>
+                        <span className="font-medium text-gray-700">
+                          {productForm.stock ?? 0} sản phẩm
+                        </span>
+                      </div>
+                      {editingProduct && (
+                        <div className="rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                          <p>Mã sản phẩm: {editingProduct.id}</p>
+                          {editingProduct.updatedAt ? (
+                            <p className="mt-1">
+                              Cập nhật gần nhất:{' '}
+                              {new Date(editingProduct.updatedAt).toLocaleString('vi-VN')}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-dashed border-purple-200 bg-purple-50/50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">
+                      Trạng thái form
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      {isProductFormValid
+                        ? 'Form đã đủ điều kiện để lưu.'
+                        : 'Cần điền đủ tên, thương hiệu, ảnh, danh mục và giá bán hợp lệ trước khi lưu.'}
+                    </p>
+                  </div>
+                </aside>
               </div>
-            </div>
-            <div className="flex gap-3 border-t border-gray-100 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setShowProductForm(false)}
-                className="flex-1 cursor-pointer rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50"
-              >
-                Hủy
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveProduct}
-                disabled={savingProduct}
-                className="flex-1 cursor-pointer rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-purple-200 hover:shadow-lg disabled:opacity-60"
-              >
-                {savingProduct
-                  ? 'Đang lưu...'
-                  : editingProduct
-                    ? 'Cập nhật'
-                    : 'Tạo mới'}
-              </button>
-            </div>
+              <div className="flex gap-3 border-t border-gray-100 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={closeProductForm}
+                  className="flex-1 cursor-pointer rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingProduct || uploadingImage || !isProductFormValid}
+                  className="flex-1 cursor-pointer rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-purple-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingProduct
+                    ? 'Đang lưu...'
+                    : editingProduct
+                      ? 'Cập nhật sản phẩm'
+                      : 'Tạo sản phẩm'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

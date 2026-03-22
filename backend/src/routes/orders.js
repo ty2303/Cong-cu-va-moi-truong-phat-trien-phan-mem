@@ -10,7 +10,14 @@ import { Product } from "../models/Product.js";
 
 export const ordersRouter = express.Router();
 
-const VALID_STATUSES = ["PENDING", "CONFIRMED", "SHIPPING", "DELIVERED", "CANCELLED"];
+const VALID_ORDER_STATUSES = ["PENDING", "CONFIRMED", "SHIPPING", "DELIVERED", "CANCELLED"];
+const VALID_TRANSITIONS = {
+  PENDING: ["CONFIRMED", "CANCELLED"],
+  CONFIRMED: ["SHIPPING", "CANCELLED"],
+  SHIPPING: ["DELIVERED"],
+  DELIVERED: [],
+  CANCELLED: [],
+};
 const CANCELLABLE_STATUSES = ["PENDING", "CONFIRMED"];
 
 /** GET / - Danh sách tất cả đơn hàng (admin) */
@@ -60,7 +67,7 @@ ordersRouter.get("/:id", requireAuth, async (req, res) => {
     if (!order) {
       const memOrder = db.orders.find((item) => item.id === req.params.id);
       if (!memOrder) {
-        return res.status(404).json(fail("KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n hÃ ng", 404));
+        return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
       }
       if (req.user.role !== "ADMIN" && memOrder.userId !== req.user.id) {
         return res.status(403).json(fail("Forbidden", 403));
@@ -76,7 +83,7 @@ ordersRouter.get("/:id", requireAuth, async (req, res) => {
   } catch {
     const memOrder = db.orders.find((item) => item.id === req.params.id);
     if (!memOrder) {
-      return res.status(404).json(fail("KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n hÃ ng", 404));
+      return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
     }
     if (req.user.role !== "ADMIN" && memOrder.userId !== req.user.id) {
       return res.status(403).json(fail("Forbidden", 403));
@@ -101,7 +108,6 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
     discount,
   } = req.body;
 
-  // Validate required fields
   if (!email || !customerName || !phone || !address || !city || !district || !ward || !paymentMethod) {
     return res.status(400).json(fail("Vui lòng điền đầy đủ thông tin", 400));
   }
@@ -121,7 +127,6 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
   }
 
   try {
-    // Validate tồn kho từ MongoDB
     for (const item of items) {
       const product = await Product.findById(item.productId);
       if (!product) {
@@ -134,10 +139,8 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
       }
     }
 
-    // Tính tổng tiền phía server
     const pricing = calculateOrderPricing(items, { discount });
 
-    // Lưu đơn hàng vào MongoDB
     const order = await Order.create({
       userId: req.user.id,
       email,
@@ -154,7 +157,6 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
       paymentStatus: paymentMethod === "MOMO" ? "PENDING" : "UNPAID",
     });
 
-    // Giảm tồn kho sản phẩm
     for (const item of items) {
       await Product.findByIdAndUpdate(item.productId, {
         $inc: { stock: -item.quantity },
@@ -165,7 +167,6 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
     return res.status(201).json(ok(serializeOrder(order.toObject()), "Đặt hàng thành công", 201));
   } catch {
     try {
-      // Fallback sang in-memory store
       const order = createOrder(req.body, req.user);
       return res.status(201).json(ok(order, "Đặt hàng thành công", 201));
     } catch (fallbackError) {
@@ -180,24 +181,22 @@ ordersRouter.post("/", requireAuth, async (req, res) => {
 ordersRouter.patch("/:id/status", requireAdmin, async (req, res) => {
   const newStatus = req.query.status ?? req.body.status;
 
-  if (newStatus && !VALID_STATUSES.includes(newStatus)) {
-    return res.status(400).json(fail("Trạng thái không hợp lệ", 400));
+  if (!VALID_ORDER_STATUSES.includes(newStatus)) {
+    return res.status(400).json(fail("Trang thai don hang khong hop le", 400));
   }
 
   try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status: newStatus },
-      { new: true }
-    ).lean();
+    const currentOrder = await Order.findById(req.params.id).lean();
 
-    if (!order) {
-      // Fallback sang in-memory
+    if (!currentOrder) {
       const memOrder = db.orders.find((item) => item.id === req.params.id);
       if (!memOrder) {
         return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
       }
-      memOrder.status = newStatus ?? memOrder.status;
+      if (!VALID_TRANSITIONS[memOrder.status]?.includes(newStatus)) {
+        return res.status(400).json(fail("Khong the cap nhat trang thai don hang theo luong nay", 400));
+      }
+      memOrder.status = newStatus;
       sendToUser(memOrder.userId, "/user/queue/order-status", {
         orderId: memOrder.id,
         newStatus: memOrder.status,
@@ -205,6 +204,11 @@ ordersRouter.patch("/:id/status", requireAdmin, async (req, res) => {
       return res.json(ok(memOrder, "Cập nhật trạng thái thành công"));
     }
 
+    if (!VALID_TRANSITIONS[currentOrder.status]?.includes(newStatus)) {
+      return res.status(400).json(fail("Khong the cap nhat trang thai don hang theo luong nay", 400));
+    }
+
+    const order = await Order.findByIdAndUpdate(req.params.id, { status: newStatus }, { new: true }).lean();
     sendToUser(order.userId, "/user/queue/order-status", {
       orderId: order._id,
       newStatus: order.status,
@@ -215,7 +219,10 @@ ordersRouter.patch("/:id/status", requireAdmin, async (req, res) => {
     if (!memOrder) {
       return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
     }
-    memOrder.status = newStatus ?? memOrder.status;
+    if (!VALID_TRANSITIONS[memOrder.status]?.includes(newStatus)) {
+      return res.status(400).json(fail("Khong the cap nhat trang thai don hang theo luong nay", 400));
+    }
+    memOrder.status = newStatus;
     sendToUser(memOrder.userId, "/user/queue/order-status", {
       orderId: memOrder.id,
       newStatus: memOrder.status,
@@ -233,7 +240,6 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
     const order = await Order.findById(req.params.id).lean();
 
     if (!order) {
-      // Fallback sang in-memory
       const memOrder = db.orders.find((item) => item.id === req.params.id);
       if (!memOrder) {
         return res.status(404).json(fail("Không tìm thấy đơn hàng", 404));
@@ -242,9 +248,7 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
         return res.status(403).json(fail("Forbidden", 403));
       }
       if (!CANCELLABLE_STATUSES.includes(memOrder.status)) {
-        return res
-          .status(400)
-          .json(fail("Không thể hủy đơn hàng ở trạng thái này", 400));
+        return res.status(400).json(fail("Khong the huy don hang o trang thai nay", 400));
       }
       memOrder.status = "CANCELLED";
       memOrder.cancelReason = cancelReason;
@@ -254,15 +258,12 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
       return res.json(ok(memOrder, "Hủy đơn hàng thành công"));
     }
 
-    // Chỉ cho phép user hủy đơn của chính mình
     if (cancelledBy === "USER" && order.userId !== req.user.id) {
       return res.status(403).json(fail("Forbidden", 403));
     }
 
     if (!CANCELLABLE_STATUSES.includes(order.status)) {
-      return res
-        .status(400)
-        .json(fail("Không thể hủy đơn hàng ở trạng thái này", 400));
+      return res.status(400).json(fail("Khong the huy don hang o trang thai nay", 400));
     }
 
     const updated = await Order.findByIdAndUpdate(
@@ -271,7 +272,6 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
       { new: true }
     ).lean();
 
-    // Hoàn lại tồn kho
     for (const item of order.items) {
       await Product.findByIdAndUpdate(item.productId, {
         $inc: { stock: item.quantity },
@@ -289,9 +289,7 @@ ordersRouter.patch("/:id/cancel", requireAuth, async (req, res) => {
       return res.status(403).json(fail("Forbidden", 403));
     }
     if (!CANCELLABLE_STATUSES.includes(memOrder.status)) {
-      return res
-        .status(400)
-        .json(fail("Không thể hủy đơn hàng ở trạng thái này", 400));
+      return res.status(400).json(fail("Khong the huy don hang o trang thai nay", 400));
     }
     memOrder.status = "CANCELLED";
     memOrder.cancelReason = cancelReason;
