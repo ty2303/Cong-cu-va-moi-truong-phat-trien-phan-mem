@@ -158,9 +158,7 @@ const PRODUCT_FIELD_LABELS: Record<ProductFormField, string> = {
   stock: 'Tồn kho',
 };
 
-const validateProductForm = (
-  form: CreateProductPayload,
-): ProductFormErrors => {
+const validateProductForm = (form: CreateProductPayload): ProductFormErrors => {
   const errors: ProductFormErrors = {};
 
   if (!form.name.trim()) {
@@ -197,7 +195,10 @@ const validateProductForm = (
     errors.rating = 'Rating phải nằm trong khoảng 0 đến 5.';
   }
 
-  if (form.stock !== undefined && (!Number.isInteger(form.stock) || form.stock < 0)) {
+  if (
+    form.stock !== undefined &&
+    (!Number.isInteger(form.stock) || form.stock < 0)
+  ) {
     errors.stock = 'Tồn kho phải là số nguyên không âm.';
   }
 
@@ -345,6 +346,8 @@ export function Component() {
     fetchProducts();
     fetchCategories();
     fetchOrders();
+    // Initial admin data is loaded once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogout = () => {
@@ -408,7 +411,9 @@ export function Component() {
     if (rawValue === '') {
       handleProductFieldChange(
         field,
-        (field === 'originalPrice' ? undefined : 0) as CreateProductPayload[typeof field],
+        (field === 'originalPrice'
+          ? undefined
+          : 0) as CreateProductPayload[typeof field],
       );
       return;
     }
@@ -418,7 +423,9 @@ export function Component() {
       field,
       Number.isFinite(parsed)
         ? (parsed as CreateProductPayload[typeof field])
-        : ((field === 'originalPrice' ? undefined : 0) as CreateProductPayload[typeof field]),
+        : ((field === 'originalPrice'
+            ? undefined
+            : 0) as CreateProductPayload[typeof field]),
     );
   };
 
@@ -615,8 +622,7 @@ export function Component() {
     }
   };
 
-  const userCount =
-    (metrics ?? EMPTY_DASHBOARD_METRICS).totals.userUsers;
+  const userCount = (metrics ?? EMPTY_DASHBOARD_METRICS).totals.userUsers;
 
   const handleUpdateRole = async (
     userId: string,
@@ -658,7 +664,8 @@ export function Component() {
   const productFormPreviewErrors = validateProductForm(normalizedProductForm);
   const isProductFormValid = Object.keys(productFormPreviewErrors).length === 0;
   const selectedCategory =
-    categories.find((category) => category.id === productForm.categoryId) ?? null;
+    categories.find((category) => category.id === productForm.categoryId) ??
+    null;
 
   const stats = [
     {
@@ -828,279 +835,284 @@ export function Component() {
                 </div>
               ) : (
                 <>
-              {/* Banner */}
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 p-6 text-white shadow-lg">
-                <div className="relative z-10">
-                  <p className="text-sm font-medium text-purple-100">
-                    Xin chào, {user?.username} 👋
-                  </p>
-                  <h2 className="mt-1 text-2xl font-bold">
-                    Chào mừng trở lại!
-                  </h2>
-                  <p className="mt-1 text-sm text-purple-100">
-                    Hệ thống đang hoạt động bình thường
-                  </p>
-                </div>
-                <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-white/10" />
-                <div className="absolute -right-4 bottom-0 h-24 w-24 rounded-full bg-white/10" />
-              </div>
+                  {/* Banner */}
+                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 p-6 text-white shadow-lg">
+                    <div className="relative z-10">
+                      <p className="text-sm font-medium text-purple-100">
+                        Xin chào, {user?.username} 👋
+                      </p>
+                      <h2 className="mt-1 text-2xl font-bold">
+                        Chào mừng trở lại!
+                      </h2>
+                      <p className="mt-1 text-sm text-purple-100">
+                        Hệ thống đang hoạt động bình thường
+                      </p>
+                    </div>
+                    <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-white/10" />
+                    <div className="absolute -right-4 bottom-0 h-24 w-24 rounded-full bg-white/10" />
+                  </div>
 
-              {/* Stats grid */}
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-                {stats.map((s) => (
-                  <div
-                    key={s.label}
-                    className="rounded-2xl bg-white p-5 shadow-sm shadow-gray-100 ring-1 ring-gray-100"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                          {s.label}
-                        </p>
-                        <p className="mt-1 text-2xl font-bold text-gray-800">
-                          {s.value}
-                        </p>
-                        <p className={`mt-1 text-xs font-medium ${s.text}`}>
-                          {s.change}
-                        </p>
-                      </div>
+                  {/* Stats grid */}
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+                    {stats.map((s) => (
                       <div
-                        className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${s.gradient} shadow-md`}
+                        key={s.label}
+                        className="rounded-2xl bg-white p-5 shadow-sm shadow-gray-100 ring-1 ring-gray-100"
                       >
-                        <s.icon className="h-6 w-6 text-white" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.5fr_1fr]">
-                <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
-                  <div className="mb-5 flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="font-bold text-gray-800">
-                        Doanh thu 7 ngày gần nhất
-                      </h3>
-                      <p className="mt-1 text-xs text-gray-400">
-                        Theo ngày tạo đơn hàng
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-emerald-50 px-3 py-2 text-right">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">
-                        Tỷ lệ hủy
-                      </p>
-                      <p className="text-lg font-bold text-emerald-700">
-                        {cancellationRate}%
-                      </p>
-                    </div>
-                  </div>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={revenueByDay}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#eef2ff" />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(value) =>
-                            `${Math.round(value / 1000)}k`
-                          }
-                        />
-                        <Tooltip
-                          formatter={(value) =>
-                            `${Number(value ?? 0).toLocaleString('vi-VN')}₫`
-                          }
-                          labelFormatter={(label) => `Ngày ${label}`}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="revenue"
-                          stroke="#6366f1"
-                          strokeWidth={3}
-                          dot={{ r: 4, fill: '#6366f1' }}
-                          activeDot={{ r: 6 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
-                  <div className="mb-5">
-                    <h3 className="font-bold text-gray-800">
-                      Tỷ trọng trạng thái đơn
-                    </h3>
-                    <p className="mt-1 text-xs text-gray-400">
-                      Theo toàn bộ đơn hiện có
-                    </p>
-                  </div>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={orderStatusData}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius={56}
-                          outerRadius={86}
-                          paddingAngle={3}
-                        >
-                          {orderStatusData.map((entry) => (
-                            <Cell key={entry.name} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value) => `${Number(value ?? 0)} đơn`}
-                        />
-                        <Legend verticalAlign="bottom" height={32} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.3fr_1fr]">
-                <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
-                  <div className="mb-5">
-                    <h3 className="font-bold text-gray-800">
-                      Doanh thu theo tháng
-                    </h3>
-                    <p className="mt-1 text-xs text-gray-400">
-                      6 tháng gần nhất
-                    </p>
-                  </div>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={revenueByMonth} barSize={28}>
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="#f3f4f6"
-                        />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tickFormatter={(value) =>
-                            `${Math.round(value / 1000)}k`
-                          }
-                        />
-                        <Tooltip
-                          formatter={(value) =>
-                            `${Number(value ?? 0).toLocaleString('vi-VN')}₫`
-                          }
-                          labelFormatter={(label) => `Tháng ${label}`}
-                        />
-                        <Bar
-                          dataKey="revenue"
-                          radius={[10, 10, 0, 0]}
-                          fill="#8b5cf6"
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
-                  <div className="mb-5">
-                    <h3 className="font-bold text-gray-800">
-                      Top sản phẩm bán chạy
-                    </h3>
-                    <p className="mt-1 text-xs text-gray-400">
-                      Theo số lượng đã bán
-                    </p>
-                  </div>
-                  <div className="space-y-3">
-                    {topSellingProducts.length > 0 ? (
-                      topSellingProducts.map((item, index) => (
-                        <div
-                          key={`${item.name}-${index}`}
-                          className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-gray-800">
-                                {item.shortName}
-                              </p>
-                              <p className="mt-1 text-xs text-gray-400">
-                                {item.revenue.toLocaleString('vi-VN')}₫
-                              </p>
-                            </div>
-                            <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
-                              {item.sold} sp
-                            </div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+                              {s.label}
+                            </p>
+                            <p className="mt-1 text-2xl font-bold text-gray-800">
+                              {s.value}
+                            </p>
+                            <p className={`mt-1 text-xs font-medium ${s.text}`}>
+                              {s.change}
+                            </p>
+                          </div>
+                          <div
+                            className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${s.gradient} shadow-md`}
+                          >
+                            <s.icon className="h-6 w-6 text-white" />
                           </div>
                         </div>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-400">
-                        Chưa có dữ liệu bán hàng
                       </div>
-                    )}
+                    ))}
                   </div>
-                </div>
-              </div>
 
-              {/* Recent orders */}
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="font-bold text-gray-800">Đơn hàng gần đây</h3>
-                  <button
-                    type="button"
-                    onClick={() => setTab('orders')}
-                    className="cursor-pointer text-xs font-medium text-purple-600 hover:underline"
-                  >
-                    Xem tất cả →
-                  </button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
-                        <th className="pb-3 pr-4">Mã đơn</th>
-                        <th className="pb-3 pr-4">Khách hàng</th>
-                        <th className="pb-3 pr-4">Tổng tiền</th>
-                        <th className="pb-3">Trạng thái</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {recentOrders.map((o) => (
-                        <tr key={o.id}>
-                          <td className="py-3 pr-4 font-mono text-xs text-gray-400">
-                            #{o.id.slice(-6).toUpperCase()}
-                          </td>
-                          <td className="py-3 pr-4 font-medium text-gray-700">
-                            {o.customerName}
-                          </td>
-                          <td className="py-3 pr-4 font-semibold text-purple-600">
-                            {o.total.toLocaleString('vi-VN')}₫
-                          </td>
-                          <td className="py-3">
-                            <span
-                              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ORDER_STATUS_COLOR[o.status]}`}
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.5fr_1fr]">
+                    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                      <div className="mb-5 flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="font-bold text-gray-800">
+                            Doanh thu 7 ngày gần nhất
+                          </h3>
+                          <p className="mt-1 text-xs text-gray-400">
+                            Theo ngày tạo đơn hàng
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-emerald-50 px-3 py-2 text-right">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">
+                            Tỷ lệ hủy
+                          </p>
+                          <p className="text-lg font-bold text-emerald-700">
+                            {cancellationRate}%
+                          </p>
+                        </div>
+                      </div>
+                      <div className="h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={revenueByDay}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              stroke="#eef2ff"
+                            />
+                            <XAxis
+                              dataKey="label"
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              tickFormatter={(value) =>
+                                `${Math.round(value / 1000)}k`
+                              }
+                            />
+                            <Tooltip
+                              formatter={(value) =>
+                                `${Number(value ?? 0).toLocaleString('vi-VN')}₫`
+                              }
+                              labelFormatter={(label) => `Ngày ${label}`}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="revenue"
+                              stroke="#6366f1"
+                              strokeWidth={3}
+                              dot={{ r: 4, fill: '#6366f1' }}
+                              activeDot={{ r: 6 }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                      <div className="mb-5">
+                        <h3 className="font-bold text-gray-800">
+                          Tỷ trọng trạng thái đơn
+                        </h3>
+                        <p className="mt-1 text-xs text-gray-400">
+                          Theo toàn bộ đơn hiện có
+                        </p>
+                      </div>
+                      <div className="h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={orderStatusData}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius={56}
+                              outerRadius={86}
+                              paddingAngle={3}
                             >
-                              {ORDER_STATUS_LABEL[o.status]}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {recentOrders.length === 0 && (
-                    <p className="py-8 text-center text-sm text-gray-400">
-                      Chưa có đơn hàng nào
-                    </p>
-                  )}
-                </div>
-              </div>
+                              {orderStatusData.map((entry) => (
+                                <Cell key={entry.name} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(value) => `${Number(value ?? 0)} đơn`}
+                            />
+                            <Legend verticalAlign="bottom" height={32} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.3fr_1fr]">
+                    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                      <div className="mb-5">
+                        <h3 className="font-bold text-gray-800">
+                          Doanh thu theo tháng
+                        </h3>
+                        <p className="mt-1 text-xs text-gray-400">
+                          6 tháng gần nhất
+                        </p>
+                      </div>
+                      <div className="h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={revenueByMonth} barSize={28}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke="#f3f4f6"
+                            />
+                            <XAxis
+                              dataKey="label"
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              tickFormatter={(value) =>
+                                `${Math.round(value / 1000)}k`
+                              }
+                            />
+                            <Tooltip
+                              formatter={(value) =>
+                                `${Number(value ?? 0).toLocaleString('vi-VN')}₫`
+                              }
+                              labelFormatter={(label) => `Tháng ${label}`}
+                            />
+                            <Bar
+                              dataKey="revenue"
+                              radius={[10, 10, 0, 0]}
+                              fill="#8b5cf6"
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                      <div className="mb-5">
+                        <h3 className="font-bold text-gray-800">
+                          Top sản phẩm bán chạy
+                        </h3>
+                        <p className="mt-1 text-xs text-gray-400">
+                          Theo số lượng đã bán
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        {topSellingProducts.length > 0 ? (
+                          topSellingProducts.map((item, index) => (
+                            <div
+                              key={`${item.name}-${index}`}
+                              className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-800">
+                                    {item.shortName}
+                                  </p>
+                                  <p className="mt-1 text-xs text-gray-400">
+                                    {item.revenue.toLocaleString('vi-VN')}₫
+                                  </p>
+                                </div>
+                                <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
+                                  {item.sold} sp
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-400">
+                            Chưa có dữ liệu bán hàng
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recent orders */}
+                  <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="font-bold text-gray-800">
+                        Đơn hàng gần đây
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setTab('orders')}
+                        className="cursor-pointer text-xs font-medium text-purple-600 hover:underline"
+                      >
+                        Xem tất cả →
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                            <th className="pb-3 pr-4">Mã đơn</th>
+                            <th className="pb-3 pr-4">Khách hàng</th>
+                            <th className="pb-3 pr-4">Tổng tiền</th>
+                            <th className="pb-3">Trạng thái</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {recentOrders.map((o) => (
+                            <tr key={o.id}>
+                              <td className="py-3 pr-4 font-mono text-xs text-gray-400">
+                                #{o.id.slice(-6).toUpperCase()}
+                              </td>
+                              <td className="py-3 pr-4 font-medium text-gray-700">
+                                {o.customerName}
+                              </td>
+                              <td className="py-3 pr-4 font-semibold text-purple-600">
+                                {o.total.toLocaleString('vi-VN')}₫
+                              </td>
+                              <td className="py-3">
+                                <span
+                                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ORDER_STATUS_COLOR[o.status]}`}
+                                >
+                                  {ORDER_STATUS_LABEL[o.status]}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {recentOrders.length === 0 && (
+                        <p className="py-8 text-center text-sm text-gray-400">
+                          Chưa có đơn hàng nào
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -1595,7 +1607,9 @@ export function Component() {
                     ).map(([field, label, placeholder]) => (
                       <div
                         key={field}
-                        className={field === 'badge' ? 'sm:col-span-2' : undefined}
+                        className={
+                          field === 'badge' ? 'sm:col-span-2' : undefined
+                        }
                       >
                         <label className="mb-1 block text-xs font-semibold text-gray-500">
                           {label}
@@ -1604,9 +1618,9 @@ export function Component() {
                           type="text"
                           placeholder={placeholder}
                           value={
-                            ((productForm as unknown as Record<string, unknown>)[
-                              field
-                            ] as string) ?? ''
+                            ((
+                              productForm as unknown as Record<string, unknown>
+                            )[field] as string) ?? ''
                           }
                           onChange={(e) =>
                             handleProductFieldChange(field, e.target.value)
@@ -1697,7 +1711,8 @@ export function Component() {
                       </label>
                     </div>
                     <p className="mt-1 text-xs text-gray-400">
-                      Ưu tiên ảnh vuông hoặc tỉ lệ gần vuông để hiển thị đẹp trong danh sách.
+                      Ưu tiên ảnh vuông hoặc tỉ lệ gần vuông để hiển thị đẹp
+                      trong danh sách.
                     </p>
                     {productFormErrors.image && (
                       <p className="mt-1 text-xs text-red-500">
@@ -1762,12 +1777,18 @@ export function Component() {
                           value={
                             field === 'originalPrice'
                               ? (productForm.originalPrice ?? '')
-                              : ((productForm as unknown as Record<string, number>)[
-                                  field
-                                ] ?? 0)
+                              : ((
+                                  productForm as unknown as Record<
+                                    string,
+                                    number
+                                  >
+                                )[field] ?? 0)
                           }
                           onChange={(e) =>
-                            handleNumericProductFieldChange(field, e.target.value)
+                            handleNumericProductFieldChange(
+                              field,
+                              e.target.value,
+                            )
                           }
                           className={`w-full rounded-xl border px-3 py-2.5 text-sm outline-none focus:bg-white focus:ring-2 ${
                             productFormErrors[field]
@@ -1806,13 +1827,17 @@ export function Component() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="line-clamp-2 text-sm font-semibold text-gray-800">
-                          {productForm.name.trim() || 'Tên sản phẩm sẽ hiển thị ở đây'}
+                          {productForm.name.trim() ||
+                            'Tên sản phẩm sẽ hiển thị ở đây'}
                         </p>
                         <p className="mt-1 text-xs text-gray-500">
                           {productForm.brand.trim() || 'Chưa có thương hiệu'}
                         </p>
                         <p className="mt-2 text-sm font-bold text-purple-600">
-                          {Number(productForm.price || 0).toLocaleString('vi-VN')}₫
+                          {Number(productForm.price || 0).toLocaleString(
+                            'vi-VN',
+                          )}
+                          ₫
                         </p>
                         {productForm.originalPrice ? (
                           <p className="text-xs text-gray-400 line-through">
@@ -1847,7 +1872,9 @@ export function Component() {
                           {editingProduct.updatedAt ? (
                             <p className="mt-1">
                               Cập nhật gần nhất:{' '}
-                              {new Date(editingProduct.updatedAt).toLocaleString('vi-VN')}
+                              {new Date(
+                                editingProduct.updatedAt,
+                              ).toLocaleString('vi-VN')}
                             </p>
                           ) : null}
                         </div>
@@ -1877,7 +1904,9 @@ export function Component() {
                 </button>
                 <button
                   type="submit"
-                  disabled={savingProduct || uploadingImage || !isProductFormValid}
+                  disabled={
+                    savingProduct || uploadingImage || !isProductFormValid
+                  }
                   className="flex-1 cursor-pointer rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-purple-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {savingProduct
