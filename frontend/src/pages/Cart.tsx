@@ -10,6 +10,10 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { Link } from 'react-router';
 
+import {
+  calculateOrderPricing,
+  FREE_SHIPPING_THRESHOLD,
+} from '@/lib/orderPricing';
 import { MAX_QUANTITY, useCartStore } from '@/store/useCartStore';
 
 export const Component = Cart;
@@ -22,8 +26,7 @@ function Cart() {
   const totalPrice = useCartStore((s) => s.totalPrice());
   const totalItems = useCartStore((s) => s.totalItems());
 
-  const shippingFee = totalPrice >= 500000 ? 0 : 30000;
-  const grandTotal = totalPrice + shippingFee;
+  const pricing = calculateOrderPricing(totalPrice);
 
   const handleClearAll = () => {
     if (
@@ -214,20 +217,21 @@ function Cart() {
                     Tạm tính ({totalItems} sản phẩm)
                   </span>
                   <span className="font-medium text-text-primary">
-                    {totalPrice.toLocaleString('vi-VN')}₫
+                    {pricing.subtotal.toLocaleString('vi-VN')}₫
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-text-secondary">Phí vận chuyển</span>
                   <span className="font-medium text-text-primary">
-                    {shippingFee === 0
+                    {pricing.shippingFee === 0
                       ? 'Miễn phí'
-                      : `${shippingFee.toLocaleString('vi-VN')}₫`}
+                      : `${pricing.shippingFee.toLocaleString('vi-VN')}₫`}
                   </span>
                 </div>
-                {shippingFee > 0 && (
+                {pricing.shippingFee > 0 && (
                   <p className="text-xs text-text-muted">
-                    Miễn phí vận chuyển cho đơn hàng từ 500.000₫
+                    Miễn phí vận chuyển cho đơn hàng từ{' '}
+                    {FREE_SHIPPING_THRESHOLD.toLocaleString('vi-VN')}₫
                   </p>
                 )}
               </div>
@@ -237,7 +241,7 @@ function Cart() {
                   Tổng cộng
                 </span>
                 <span className="font-display text-xl font-bold text-brand">
-                  {grandTotal.toLocaleString('vi-VN')}₫
+                  {pricing.total.toLocaleString('vi-VN')}₫
                 </span>
               </div>
 

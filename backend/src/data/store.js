@@ -1,10 +1,12 @@
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
+import { calculateOrderPricing } from "../lib/orderPricing.js";
 
 const now = () => new Date().toISOString();
 
 const JWT_SECRET = process.env.JWT_SECRET || "development-secret";
 const JWT_EXPIRES_IN = "7d";
+const reservedStockOrderIds = new Set();
 
 export const db = {
 	users: [
@@ -167,6 +169,7 @@ export const db = {
 			],
 			subtotal: 27990000,
 			shippingFee: 0,
+			discount: 0,
 			total: 27990000,
 			createdAt: now(),
 			paymentStatus: "PAID",
@@ -286,11 +289,25 @@ export function sanitizeUser(user) {
 }
 
 export function createOrder(payload, user) {
-	const subtotal = payload.items.reduce(
-		(sum, item) => sum + item.price * item.quantity,
-		0,
-	);
-	const shippingFee = subtotal > 10000000 ? 0 : 30000;
+	for (const item of payload.items) {
+		const product = db.products.find((entry) => entry.id === item.productId);
+		if (!product) {
+			const error = new Error(`Sản phẩm "${item.productName}" không tồn tại`);
+			error.status = 404;
+			throw error;
+		}
+		if (product.stock < item.quantity) {
+			const error = new Error(
+				`Sản phẩm "${product.name}" không đủ hàng (còn ${product.stock})`,
+			);
+			error.status = 409;
+			throw error;
+		}
+	}
+
+	const pricing = calculateOrderPricing(payload.items, {
+		discount: payload.discount,
+	});
 	const order = {
 		id: crypto.randomUUID(),
 		userId: user?.id ?? "guest",
@@ -305,15 +322,40 @@ export function createOrder(payload, user) {
 		paymentMethod: payload.paymentMethod,
 		status: "PENDING",
 		items: payload.items,
-		subtotal,
-		shippingFee,
-		total: subtotal + shippingFee,
+		...pricing,
 		createdAt: now(),
 		paymentStatus: payload.paymentMethod === "MOMO" ? "PENDING" : "UNPAID",
 	};
 
+	for (const item of payload.items) {
+		const product = db.products.find((entry) => entry.id === item.productId);
+		if (!product) {
+			continue;
+		}
+		product.stock -= item.quantity;
+		product.updatedAt = now();
+	}
+
 	db.orders.unshift(order);
+	reservedStockOrderIds.add(order.id);
 	return order;
+}
+
+export function restoreReservedStockForOrder(order) {
+	if (!reservedStockOrderIds.has(order.id)) {
+		return;
+	}
+
+	for (const item of order.items) {
+		const product = db.products.find((entry) => entry.id === item.productId);
+		if (!product) {
+			continue;
+		}
+		product.stock += item.quantity;
+		product.updatedAt = now();
+	}
+
+	reservedStockOrderIds.delete(order.id);
 }
 
 /**
