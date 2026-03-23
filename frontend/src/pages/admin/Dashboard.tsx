@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -45,8 +45,13 @@ import type {
 } from '@/types/product';
 import type { Order, OrderStatus } from '@/types/order';
 import { ORDER_STATUS_COLOR, ORDER_STATUS_LABEL } from '@/types/order';
+import type { Review } from '@/types/review';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useToastStore } from '@/store/useToastStore';
+import {
+  buildReviewSentimentSummary,
+  getSentimentLabel,
+} from '@/utils/reviewSentiment';
 
 interface UserItem {
   id: string;
@@ -280,6 +285,8 @@ export function Component() {
   // Orders
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
 
@@ -341,11 +348,28 @@ export function Component() {
       .finally(() => setLoadingOrders(false));
   };
 
+  const fetchReviews = () => {
+    setLoadingReviews(true);
+    apiClient
+      .get<ApiResponse<Review[]>>(ENDPOINTS.REVIEWS.BASE)
+      .then((res) => setReviews(res.data.data))
+      .catch((err: unknown) => {
+        const axiosErr = err as ApiError;
+        addToast(
+          'error',
+          axiosErr.response?.data?.message ||
+            'Không thể tải thống kê cảm xúc từ đánh giá.',
+        );
+      })
+      .finally(() => setLoadingReviews(false));
+  };
+
   useEffect(() => {
     fetchDashboardMetrics();
     fetchProducts();
     fetchCategories();
     fetchOrders();
+    fetchReviews();
     // Initial admin data is loaded once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -666,6 +690,31 @@ export function Component() {
   const selectedCategory =
     categories.find((category) => category.id === productForm.categoryId) ??
     null;
+  const productLookup = useMemo(
+    () =>
+      new Map(products.map((product) => [product.id, { name: product.name }])),
+    [products],
+  );
+  const sentimentSummary = useMemo(
+    () => buildReviewSentimentSummary(reviews, productLookup),
+    [productLookup, reviews],
+  );
+  const sentimentChartData = sentimentSummary.stats
+    .filter((item) => item.count > 0)
+    .map((item) => ({
+      name: item.label,
+      value: item.count,
+      color: item.color,
+    }));
+  const sentimentProductHighlights = [...sentimentSummary.productSummaries]
+    .sort((first, second) => {
+      if (second.totalMentions !== first.totalMentions) {
+        return second.totalMentions - first.totalMentions;
+      }
+
+      return second.negativeRatio - first.negativeRatio;
+    })
+    .slice(0, 5);
 
   const stats = [
     {
@@ -1053,6 +1102,185 @@ export function Component() {
                         ) : (
                           <div className="rounded-xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-400">
                             Chưa có dữ liệu bán hàng
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_1.4fr]">
+                    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                      <div className="mb-5 flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="font-bold text-gray-800">
+                            Cảm xúc từ bình luận
+                          </h3>
+                          <p className="mt-1 text-xs text-gray-400">
+                            Tổng hợp từ các khía cạnh được phân tích trong đánh
+                            giá
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 px-3 py-2 text-right">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            Lượt phân tích
+                          </p>
+                          <p className="text-lg font-bold text-slate-700">
+                            {sentimentSummary.totalMentions}
+                          </p>
+                        </div>
+                      </div>
+
+                      {loadingReviews ? (
+                        <div className="flex h-72 items-center justify-center">
+                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-200 border-t-emerald-500" />
+                        </div>
+                      ) : sentimentChartData.length > 0 ? (
+                        <div className="h-72">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={sentimentChartData}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius={62}
+                                outerRadius={94}
+                                paddingAngle={3}
+                              >
+                                {sentimentChartData.map((entry) => (
+                                  <Cell key={entry.name} fill={entry.color} />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                formatter={(value) =>
+                                  `${Number(value ?? 0)} lượt nhận diện`
+                                }
+                              />
+                              <Legend verticalAlign="bottom" height={32} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-400">
+                          Chưa có dữ liệu cảm xúc từ bình luận
+                        </div>
+                      )}
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        {sentimentSummary.stats.map((item) => (
+                          <div
+                            key={item.sentiment}
+                            className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: item.color }}
+                              />
+                              <p className="text-sm font-semibold text-gray-700">
+                                {item.label}
+                              </p>
+                            </div>
+                            <p className="mt-2 text-xl font-bold text-gray-800">
+                              {item.percentageLabel}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {item.count} lượt nhận diện
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
+                      <div className="mb-5 flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="font-bold text-gray-800">
+                            Chất lượng theo sản phẩm
+                          </h3>
+                          <p className="mt-1 text-xs text-gray-400">
+                            Ưu tiên sản phẩm có nhiều nhận diện cảm xúc nhất
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-indigo-50 px-3 py-2 text-right">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-500">
+                            Review đã phân tích
+                          </p>
+                          <p className="text-lg font-bold text-indigo-700">
+                            {sentimentSummary.analyzedReviewCount}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {loadingReviews ? (
+                          <div className="flex items-center justify-center py-20">
+                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-500" />
+                          </div>
+                        ) : sentimentProductHighlights.length > 0 ? (
+                          sentimentProductHighlights.map((item) => (
+                            <div
+                              key={item.productId}
+                              className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-gray-800">
+                                    {item.productName}
+                                  </p>
+                                  <p className="mt-1 text-xs text-gray-400">
+                                    {item.totalMentions} lượt nhận diện cảm xúc
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">
+                                  {item.dominantSentiment
+                                    ? getSentimentLabel(item.dominantSentiment)
+                                    : 'Chưa có'}
+                                </span>
+                              </div>
+
+                              <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white">
+                                <div className="flex h-full w-full">
+                                  <div
+                                    className="h-full bg-emerald-500"
+                                    style={{
+                                      width: `${item.positiveRatio * 100}%`,
+                                    }}
+                                  />
+                                  <div
+                                    className="h-full bg-slate-400"
+                                    style={{
+                                      width: `${item.neutralRatio * 100}%`,
+                                    }}
+                                  />
+                                  <div
+                                    className="h-full bg-red-500"
+                                    style={{
+                                      width: `${item.negativeRatio * 100}%`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
+                                <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                                  Tích cực{' '}
+                                  {Math.round(item.positiveRatio * 100)}%
+                                </span>
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700">
+                                  Trung lập{' '}
+                                  {Math.round(item.neutralRatio * 100)}%
+                                </span>
+                                <span className="rounded-full bg-red-50 px-2.5 py-1 font-medium text-red-700">
+                                  Tiêu cực{' '}
+                                  {Math.round(item.negativeRatio * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-400">
+                            Chưa có sản phẩm nào đủ thông tin cảm xúc để thống
+                            kê
                           </div>
                         )}
                       </div>
