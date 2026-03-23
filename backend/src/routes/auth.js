@@ -14,7 +14,14 @@ const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 const DEFAULT_GOOGLE_SCOPES = "openid email profile";
 
 function getFrontendUrl() {
-  return process.env.FRONTEND_URL ?? "http://localhost:5173";
+  return process.env.FRONTEND_URL?.split(",")[0]?.trim() || "http://localhost:5173";
+}
+
+function getBackendUrl(req) {
+  return (
+    process.env.BACKEND_URL?.trim() ||
+    `${req.protocol}://${req.get("host")}`
+  );
 }
 
 function buildFrontendLoginUrl(errorCode) {
@@ -38,7 +45,7 @@ function buildFrontendCallbackUrl(params) {
 function getGoogleConfig(req) {
   const redirectUri =
     process.env.GOOGLE_REDIRECT_URI ??
-    `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+    `${getBackendUrl(req)}/api/auth/google/callback`;
 
   return {
     clientId: process.env.GOOGLE_CLIENT_ID,

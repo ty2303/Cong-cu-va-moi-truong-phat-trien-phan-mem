@@ -703,6 +703,148 @@ test("GET /api/auth/google/callback redirects to frontend callback with app toke
 	});
 });
 
+test("GET /api/auth/google redirects to login when Google config is missing", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+		};
+
+		process.env.FRONTEND_URL = "http://localhost:5173,http://127.0.0.1:5173";
+		delete process.env.GOOGLE_CLIENT_ID;
+		delete process.env.GOOGLE_CLIENT_SECRET;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			assert.equal(response.status, 302);
+			assert.equal(
+				response.headers.get("location"),
+				"http://localhost:5173/login?error=google_not_configured",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google uses BACKEND_URL to build local callback URI", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			BACKEND_URL: process.env.BACKEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+
+		process.env.BACKEND_URL = "http://localhost:8080";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		delete process.env.GOOGLE_REDIRECT_URI;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const location = response.headers.get("location");
+			assert.ok(location);
+			const redirectUrl = new URL(location);
+			assert.equal(
+				redirectUrl.searchParams.get("redirect_uri"),
+				"http://localhost:8080/api/auth/google/callback",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to login when state is invalid", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=invalid-state`,
+				{ redirect: "manual" },
+			);
+			assert.equal(response.status, 302);
+			assert.equal(
+				response.headers.get("location"),
+				"http://localhost:5173/login?error=google_failed",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to login when Google denies access", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+		};
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?error=access_denied`,
+				{ redirect: "manual" },
+			);
+			assert.equal(response.status, 302);
+			assert.equal(
+				response.headers.get("location"),
+				"http://localhost:5173/login?error=google_failed",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
 test("GET /api/admin/dashboard-metrics returns aggregated admin overview", async () => {
 	await withServer(async (port) => {
 		const response = await fetch(
