@@ -4,6 +4,8 @@ import { isDatabaseReady } from "../data/mongodb.js";
 import { db } from "../data/store.js";
 import { fail, ok } from "../lib/apiResponse.js";
 import { serializeReview } from "../lib/catalogSerializers.js";
+import { analyzeReviewComment } from "../lib/reviewAnalysis.js";
+import { uploadReviewImage } from "../lib/reviewImageUpload.js";
 import { Product } from "../models/Product.js";
 import { Review } from "../models/Review.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -33,68 +35,123 @@ reviewsRouter.get("/", async (req, res) => {
 });
 
 reviewsRouter.post("/", requireAuth, async (req, res) => {
-  const productId = String(req.body.productId ?? "").trim();
-  const comment = String(req.body.comment ?? "").trim();
-  const rating = Number(req.body.rating);
+  const payload = normalizeReviewPayload(req.body);
 
-  if (!productId || !comment || !Number.isFinite(rating) || rating < 1 || rating > 5) {
+  if (!payload) {
     return res.status(400).json(fail("Danh gia khong hop le", 400));
   }
 
   if (!isDatabaseReady()) {
-    const product = db.products.find((item) => item.id === productId);
+    const product = db.products.find((item) => item.id === payload.productId);
     if (!product) {
       return res.status(404).json(fail("Khong tim thay san pham", 404));
     }
 
     const existed = db.reviews.find(
-      (review) => review.productId === productId && review.userId === req.user.id
+      (review) => review.productId === payload.productId && review.userId === req.user.id
     );
     if (existed) {
       return res.status(409).json(fail("Ban da danh gia san pham nay", 409));
     }
 
+    const analysisResults = await analyzeReviewComment(payload.comment);
     const review = {
       id: crypto.randomUUID(),
-      productId,
+      productId: payload.productId,
       userId: req.user.id,
       username: req.user.username,
-      rating,
-      comment,
-      images: Array.isArray(req.body.images) ? req.body.images.filter(Boolean) : [],
-      createdAt: new Date().toISOString()
+      rating: payload.rating,
+      comment: payload.comment,
+      images: payload.images,
+      analysisResults,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     db.reviews.unshift(review);
-    syncMemoryProductRating(productId);
+    syncMemoryProductRating(payload.productId);
     return res
       .status(201)
       .json(ok(serializeReview({ _id: review.id, ...review }), "Them danh gia thanh cong", 201));
   }
 
-  const product = await Product.findById(productId);
+  const product = await Product.findById(payload.productId);
   if (!product) {
     return res.status(404).json(fail("Khong tim thay san pham", 404));
   }
 
-  const existed = await Review.findOne({ productId, userId: req.user.id }).lean();
+  const existed = await Review.findOne({ productId: payload.productId, userId: req.user.id }).lean();
   if (existed) {
     return res.status(409).json(fail("Ban da danh gia san pham nay", 409));
   }
 
+  const analysisResults = await analyzeReviewComment(payload.comment);
   const review = await Review.create({
     _id: crypto.randomUUID(),
-    productId,
+    productId: payload.productId,
     userId: req.user.id,
     username: req.user.username,
-    rating,
-    comment,
-    images: Array.isArray(req.body.images) ? req.body.images.filter(Boolean) : [],
-    createdAt: new Date()
+    rating: payload.rating,
+    comment: payload.comment,
+    images: payload.images,
+    analysisResults,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
-  await syncProductRating(productId);
+  await syncProductRating(payload.productId);
 
   res.status(201).json(ok(serializeReview(review.toObject()), "Them danh gia thanh cong", 201));
+});
+
+reviewsRouter.put("/:id", requireAuth, async (req, res) => {
+  const payload = normalizeReviewPayload(req.body);
+
+  if (!payload) {
+    return res.status(400).json(fail("Danh gia khong hop le", 400));
+  }
+
+  if (!isDatabaseReady()) {
+    const review = db.reviews.find((item) => item.id === req.params.id);
+    if (!review) {
+      return res.status(404).json(fail("Khong tim thay danh gia", 404));
+    }
+    if (review.userId !== req.user.id) {
+      return res.status(403).json(fail("Forbidden", 403));
+    }
+    if (review.productId !== payload.productId) {
+      return res.status(400).json(fail("Khong duoc thay doi san pham cua danh gia", 400));
+    }
+
+    review.rating = payload.rating;
+    review.comment = payload.comment;
+    review.images = payload.images;
+    review.analysisResults = await analyzeReviewComment(payload.comment);
+    review.updatedAt = new Date().toISOString();
+    syncMemoryProductRating(payload.productId);
+
+    return res.json(ok(serializeReview({ _id: review.id, ...review }), "Cap nhat danh gia thanh cong"));
+  }
+
+  const review = await Review.findById(req.params.id);
+  if (!review) {
+    return res.status(404).json(fail("Khong tim thay danh gia", 404));
+  }
+  if (review.userId !== req.user.id) {
+    return res.status(403).json(fail("Forbidden", 403));
+  }
+  if (review.productId !== payload.productId) {
+    return res.status(400).json(fail("Khong duoc thay doi san pham cua danh gia", 400));
+  }
+
+  review.rating = payload.rating;
+  review.comment = payload.comment;
+  review.images = payload.images;
+  review.analysisResults = await analyzeReviewComment(payload.comment);
+  review.updatedAt = new Date();
+  await review.save();
+  await syncProductRating(payload.productId);
+
+  return res.json(ok(serializeReview(review.toObject()), "Cap nhat danh gia thanh cong"));
 });
 
 reviewsRouter.delete("/:id", requireAuth, async (req, res) => {
@@ -131,10 +188,22 @@ reviewsRouter.delete("/:id", requireAuth, async (req, res) => {
   res.json(ok(null, "Xoa danh gia thanh cong"));
 });
 
-reviewsRouter.post("/upload-image", requireAuth, (_req, res) => {
-  res.status(410).json(
-    fail("Tinh nang upload anh gia lap da duoc loai bo. Frontend se gui anh truc tiep trong review.", 410)
-  );
+reviewsRouter.post("/upload-image", requireAuth, async (req, res) => {
+  const imageData = String(req.body?.imageData ?? "").trim();
+  const folder = String(req.body?.folder ?? "reviews").trim() || "reviews";
+
+  if (!imageData) {
+    return res.status(400).json(fail("Anh review khong hop le", 400));
+  }
+
+  try {
+    const imageUrl = await uploadReviewImage(imageData, folder);
+    return res.json(ok(imageUrl, "Upload anh thanh cong"));
+  } catch (error) {
+    return res
+      .status(400)
+      .json(fail(error.message ?? "Upload anh that bai", 400));
+  }
 });
 
 async function syncProductRating(productId) {
@@ -174,4 +243,30 @@ function syncMemoryProductRating(productId) {
 
   product.rating = nextRating;
   product.updatedAt = new Date().toISOString();
+}
+
+function normalizeReviewPayload(body) {
+  const productId = String(body?.productId ?? "").trim();
+  const comment = String(body?.comment ?? "").trim();
+  const rating = Number(body?.rating);
+  const images = Array.isArray(body?.images) ? body.images.map((item) => String(item).trim()).filter(Boolean) : [];
+
+  if (
+    !productId ||
+    !comment ||
+    comment.length > 1000 ||
+    images.length > 5 ||
+    !Number.isFinite(rating) ||
+    rating < 1 ||
+    rating > 5
+  ) {
+    return null;
+  }
+
+  return {
+    productId,
+    comment,
+    rating,
+    images,
+  };
 }

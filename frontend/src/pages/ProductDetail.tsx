@@ -6,6 +6,7 @@ import {
   Heart,
   Loader2,
   Package,
+  Pencil,
   RotateCcw,
   Send,
   Shield,
@@ -28,7 +29,15 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useCartStore } from '@/store/useCartStore';
 import { useWishlistStore } from '@/store/useWishlistStore';
 import type { Product } from '@/types/product';
-import type { CreateReviewPayload, Review } from '@/types/review';
+import type {
+  CreateReviewPayload,
+  Review,
+  ReviewAnalysisResult,
+} from '@/types/review';
+import {
+  buildReviewSentimentSummary,
+  buildSentimentDonutStyle,
+} from '@/utils/reviewSentiment';
 
 function getAverageRating(items: Review[]) {
   if (items.length === 0) return 0;
@@ -40,9 +49,49 @@ function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Không thể đọc tệp ảnh.'));
+    reader.onerror = () => reject(new Error('Khong the doc tep anh.'));
     reader.readAsDataURL(file);
   });
+}
+
+function getSentimentBadgeClass(sentiment: ReviewAnalysisResult['sentiment']) {
+  if (sentiment === 'positive') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  }
+
+  if (sentiment === 'negative') {
+    return 'border-red-200 bg-red-50 text-red-700';
+  }
+
+  return 'border-slate-200 bg-slate-100 text-slate-700';
+}
+
+function getSentimentLabel(sentiment: ReviewAnalysisResult['sentiment']) {
+  if (sentiment === 'positive') {
+    return 'Tích cực';
+  }
+
+  if (sentiment === 'negative') {
+    return 'Tiêu cực';
+  }
+
+  return 'Trung lập';
+}
+
+function getLocalizedSentimentLabel(
+  sentiment: ReviewAnalysisResult['sentiment'],
+) {
+  const legacyLabel = getSentimentLabel(sentiment);
+
+  if (sentiment === 'positive') {
+    return 'Tích cực';
+  }
+
+  if (sentiment === 'negative') {
+    return 'Tiêu cực';
+  }
+
+  return legacyLabel ? 'Trung lập' : 'Trung lập';
 }
 
 export function Component() {
@@ -68,8 +117,10 @@ export function Component() {
   const [reviewError, setReviewError] = useState('');
   const [reviewImages, setReviewImages] = useState<string[]>([]);
   const [uploadingReviewImage, setUploadingReviewImage] = useState(false);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
 
   const myReview = reviews.find((review) => review.userId === user?.id);
+  const isEditingReview = editingReviewId !== null;
 
   useEffect(() => {
     if (!id) return;
@@ -155,6 +206,16 @@ export function Component() {
     [reviews],
   );
 
+  const sentimentSummary = useMemo(
+    () => buildReviewSentimentSummary(reviews),
+    [reviews],
+  );
+
+  const sentimentDonutStyle = useMemo(
+    () => buildSentimentDonutStyle(sentimentSummary.stats),
+    [sentimentSummary.stats],
+  );
+
   const specificationList = useMemo(
     () =>
       product?.specs
@@ -198,6 +259,50 @@ export function Component() {
     },
   ];
 
+  const resetReviewForm = () => {
+    setReviewComment('');
+    setReviewRating(5);
+    setReviewImages([]);
+    setReviewHover(0);
+    setReviewError('');
+    setEditingReviewId(null);
+  };
+
+  const handleEditReview = (review: Review) => {
+    setEditingReviewId(review.id);
+    setReviewRating(review.rating);
+    setReviewComment(review.comment);
+    setReviewImages(review.images ?? []);
+    setReviewHover(0);
+    setReviewError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleReviewImageUpload = async (file: File) => {
+    setReviewError('');
+    setUploadingReviewImage(true);
+
+    try {
+      const imageData = await fileToDataUrl(file);
+
+      const response = await apiClient.post<ApiResponse<string>>(
+        ENDPOINTS.REVIEWS.UPLOAD_IMAGE,
+        { imageData, folder: 'reviews' },
+      );
+
+      setReviewImages((current) => [...current, response.data.data]);
+    } catch (error: unknown) {
+      const axiosError = error as {
+        response?: { data?: { message?: string } };
+      };
+      setReviewError(
+        axiosError.response?.data?.message ?? 'Không thể upload ảnh đánh giá.',
+      );
+    } finally {
+      setUploadingReviewImage(false);
+    }
+  };
+
   const handleSubmitReview = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -219,12 +324,22 @@ export function Component() {
         images: reviewImages.length > 0 ? reviewImages : undefined,
       };
 
-      const response = await apiClient.post<ApiResponse<Review>>(
-        ENDPOINTS.REVIEWS.BASE,
-        payload,
-      );
+      const response = isEditingReview
+        ? await apiClient.put<ApiResponse<Review>>(
+            ENDPOINTS.REVIEWS.UPDATE(editingReviewId),
+            payload,
+          )
+        : await apiClient.post<ApiResponse<Review>>(
+            ENDPOINTS.REVIEWS.BASE,
+            payload,
+          );
 
-      const nextReviews = [response.data.data, ...reviews];
+      const savedReview = response.data.data;
+      const nextReviews = isEditingReview
+        ? reviews.map((review) =>
+            review.id === savedReview.id ? savedReview : review,
+          )
+        : [savedReview, ...reviews];
       const nextAverage = getAverageRating(nextReviews);
 
       setReviews(nextReviews);
@@ -236,9 +351,7 @@ export function Component() {
             }
           : current,
       );
-      setReviewComment('');
-      setReviewRating(5);
-      setReviewImages([]);
+      resetReviewForm();
     } catch (error: unknown) {
       const axiosError = error as {
         response?: { data?: { message?: string } };
@@ -268,6 +381,9 @@ export function Component() {
             }
           : current,
       );
+      if (editingReviewId === reviewId) {
+        resetReviewForm();
+      }
     } catch (error: unknown) {
       const axiosError = error as {
         response?: { data?: { message?: string } };
@@ -573,50 +689,150 @@ export function Component() {
         </div>
 
         <section className="mt-20 grid gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-          <div className="rounded-[1.75rem] border border-border bg-surface p-6">
-            <h2 className="font-display text-2xl font-bold text-brand">
-              Tổng quan đánh giá
-            </h2>
-            <div className="mt-5 flex items-end gap-4">
-              <span className="font-display text-5xl font-bold text-brand">
-                {averageRating.toFixed(1)}
-              </span>
-              <div className="pb-1">
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: 5 }).map((_, index) => (
-                    <Star
-                      key={`summary-rating-${index}`}
-                      className={`h-4 w-4 ${
-                        index < Math.round(averageRating)
-                          ? 'fill-amber-400 text-amber-400'
-                          : 'fill-transparent text-text-muted'
-                      }`}
-                    />
-                  ))}
+          <div className="space-y-6">
+            <div className="rounded-[1.75rem] border border-border bg-surface p-6">
+              <h2 className="font-display text-2xl font-bold text-brand">
+                Tổng quan đánh giá
+              </h2>
+              <div className="mt-5 flex items-end gap-4">
+                <span className="font-display text-5xl font-bold text-brand">
+                  {averageRating.toFixed(1)}
+                </span>
+                <div className="pb-1">
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <Star
+                        key={`summary-rating-${index}`}
+                        className={`h-4 w-4 ${
+                          index < Math.round(averageRating)
+                            ? 'fill-amber-400 text-amber-400'
+                            : 'fill-transparent text-text-muted'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className="mt-2 text-sm text-text-secondary">
+                    Dựa trên {reviews.length} đánh giá đã lưu trong hệ thống
+                  </p>
                 </div>
-                <p className="mt-2 text-sm text-text-secondary">
-                  Dựa trên {reviews.length} đánh giá đã lưu trong hệ thống
-                </p>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {reviewDistribution.map((item) => (
+                  <div key={item.rating} className="flex items-center gap-3">
+                    <span className="w-10 text-sm text-text-secondary">
+                      {item.rating} sao
+                    </span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-alt">
+                      <div
+                        className="h-full rounded-full bg-brand-accent"
+                        style={{ width: `${item.percent}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right text-sm text-text-secondary">
+                      {item.count}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="mt-6 space-y-3">
-              {reviewDistribution.map((item) => (
-                <div key={item.rating} className="flex items-center gap-3">
-                  <span className="w-10 text-sm text-text-secondary">
-                    {item.rating} sao
-                  </span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-alt">
-                    <div
-                      className="h-full rounded-full bg-brand-accent"
-                      style={{ width: `${item.percent}%` }}
-                    />
-                  </div>
-                  <span className="w-10 text-right text-sm text-text-secondary">
-                    {item.count}
-                  </span>
+            <div className="rounded-[1.75rem] border border-border bg-surface p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="font-display text-xl font-semibold text-brand">
+                    Thống kê cảm xúc
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-text-secondary">
+                    Hiển thị tỷ lệ bình luận tích cực, trung lập và tiêu cực để
+                    đánh giá nhanh chất lượng sản phẩm.
+                  </p>
                 </div>
-              ))}
+                <div className="rounded-2xl bg-surface-alt px-4 py-3 text-right">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">
+                    Lượt phân tích
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-brand">
+                    {sentimentSummary.totalMentions}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-6 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+                <div
+                  className="mx-auto flex h-40 w-40 items-center justify-center rounded-full p-4"
+                  style={sentimentDonutStyle}
+                >
+                  <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-surface text-center shadow-inner">
+                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">
+                      Chủ đạo
+                    </span>
+                    <span className="mt-2 text-lg font-bold text-brand">
+                      {sentimentSummary.dominantSentiment
+                        ? getLocalizedSentimentLabel(
+                            sentimentSummary.dominantSentiment,
+                          )
+                        : 'Chưa có'}
+                    </span>
+                    <span className="mt-1 text-xs text-text-secondary">
+                      {sentimentSummary.analyzedReviewCount}/{reviews.length}{' '}
+                      review
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="h-3 overflow-hidden rounded-full bg-surface-alt">
+                    {sentimentSummary.totalMentions > 0 ? (
+                      <div className="flex h-full w-full">
+                        {sentimentSummary.stats.map((item) => (
+                          <div
+                            key={item.sentiment}
+                            className="h-full"
+                            style={{
+                              width: `${item.ratio * 100}%`,
+                              backgroundColor: item.color,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="h-full w-full bg-slate-200" />
+                    )}
+                  </div>
+
+                  <div className="grid gap-3">
+                    {sentimentSummary.stats.map((item) => (
+                      <div
+                        key={item.sentiment}
+                        className={`flex items-center justify-between rounded-2xl px-4 py-3 ${item.bgColor}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span
+                            className="h-3 w-3 rounded-full"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <div>
+                            <p
+                              className={`text-sm font-semibold ${item.textColor}`}
+                            >
+                              {item.label}
+                            </p>
+                            <p className="text-xs text-text-secondary">
+                              {item.count} lượt nhận diện
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-sm font-semibold ${item.textColor}`}
+                        >
+                          {item.percentageLabel}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -629,7 +845,7 @@ export function Component() {
                 {reviews.length} đánh giá
               </span>
             </div>
-            {isLoggedIn && !isAdmin && !myReview && (
+            {isLoggedIn && !isAdmin && (!myReview || isEditingReview) && (
               <motion.form
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -637,7 +853,9 @@ export function Component() {
                 className="mb-8 rounded-[1.75rem] border border-border bg-surface p-6"
               >
                 <p className="font-medium text-text-primary">
-                  Đánh giá từ tài khoản của bạn
+                  {isEditingReview
+                    ? 'Chỉnh sửa đánh giá của bạn'
+                    : 'Đánh giá từ tài khoản của bạn'}
                 </p>
 
                 <div className="mt-4 flex items-center gap-1">
@@ -739,19 +957,10 @@ export function Component() {
                               return;
                             }
 
-                            setReviewError('');
-                            setUploadingReviewImage(true);
-
                             try {
-                              const dataUrl = await fileToDataUrl(file);
-                              setReviewImages((current) => [
-                                ...current,
-                                dataUrl,
-                              ]);
+                              await handleReviewImageUpload(file);
                             } catch {
                               setReviewError('Không thể đọc ảnh đã chọn.');
-                            } finally {
-                              setUploadingReviewImage(false);
                             }
                           }}
                         />
@@ -770,7 +979,16 @@ export function Component() {
                   </p>
                 )}
 
-                <div className="mt-5 flex justify-end">
+                <div className="mt-5 flex justify-end gap-3">
+                  {isEditingReview && (
+                    <button
+                      type="button"
+                      onClick={resetReviewForm}
+                      className="btn-outline"
+                    >
+                      Hủy sửa
+                    </button>
+                  )}
                   <motion.button
                     type="submit"
                     disabled={reviewSubmitting || !reviewComment.trim()}
@@ -783,7 +1001,7 @@ export function Component() {
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Gửi đánh giá
+                    {isEditingReview ? 'Lưu đánh giá' : 'Gửi đánh giá'}
                   </motion.button>
                 </div>
               </motion.form>
@@ -805,8 +1023,18 @@ export function Component() {
 
             {myReview && (
               <div className="mb-8 rounded-[1.75rem] border border-emerald-200 bg-emerald-50/70 px-5 py-4 text-sm text-emerald-700">
-                Bạn đã gửi đánh giá cho sản phẩm này. Muốn thay đổi nội dung thì
-                hãy xóa đánh giá hiện tại và gửi lại.
+                Bạn đã gửi đánh giá cho sản phẩm này. Bạn có thể chỉnh sửa trực
+                tiếp hoặc xóa đánh giá hiện tại.
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => handleEditReview(myReview)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Chỉnh sửa đánh giá
+                  </button>
+                </div>
               </div>
             )}
 
@@ -873,6 +1101,33 @@ export function Component() {
                     <p className="mt-3 text-sm leading-7 text-text-secondary">
                       {review.comment}
                     </p>
+
+                    {review.analysisResults &&
+                      review.analysisResults.length > 0 && (
+                        <div className="mt-4">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted">
+                            Phân tích cảm xúc
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {review.analysisResults.map((result, index) => (
+                              <span
+                                key={`${review.id}-${result.aspect}-${index}`}
+                                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${getSentimentBadgeClass(result.sentiment)}`}
+                                title={`Độ tin cậy ${(result.confidence * 100).toFixed(0)}%`}
+                              >
+                                <span>{result.aspect}</span>
+                                <span className="opacity-70">•</span>
+                                <span>
+                                  {getLocalizedSentimentLabel(result.sentiment)}
+                                </span>
+                                <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-[11px] font-semibold">
+                                  {(result.confidence * 100).toFixed(0)}%
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                     {review.images && review.images.length > 0 && (
                       <div className="mt-4 flex flex-wrap gap-2">

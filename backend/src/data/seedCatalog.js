@@ -66,7 +66,9 @@ export async function seedCatalogIfNeeded() {
           rating: review.rating,
           comment: review.comment,
           images: review.images ?? [],
-          createdAt: review.createdAt ?? new Date()
+          analysisResults: review.analysisResults ?? [],
+          createdAt: review.createdAt ?? new Date(),
+          updatedAt: review.updatedAt ?? review.createdAt ?? new Date()
         }))
       )
     );

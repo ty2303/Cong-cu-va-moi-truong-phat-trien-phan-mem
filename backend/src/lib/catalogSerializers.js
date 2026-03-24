@@ -72,7 +72,13 @@ export function serializeReview(review) {
     rating: review.rating,
     comment: review.comment,
     images: review.images ?? [],
-    createdAt: toIso(review.createdAt)
+    analysisResults: (review.analysisResults ?? []).map((item) => ({
+      aspect: item.aspect,
+      sentiment: item.sentiment,
+      confidence: item.confidence,
+    })),
+    createdAt: toIso(review.createdAt),
+    updatedAt: toIso(review.updatedAt),
   };
 }
 
