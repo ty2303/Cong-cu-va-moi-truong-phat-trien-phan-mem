@@ -628,9 +628,13 @@ export function Component() {
 
   const handleUpdateOrderStatus = async (id: string, status: OrderStatus) => {
     try {
-      await apiClient.patch(ENDPOINTS.ORDERS.STATUS(id), {}, {
-        params: { status },
-      });
+      await apiClient.patch(
+        ENDPOINTS.ORDERS.STATUS(id),
+        {},
+        {
+          params: { status },
+        },
+      );
       fetchDashboardMetrics();
       fetchOrders();
       addToast(
@@ -656,9 +660,13 @@ export function Component() {
     const label = newRole === 'ADMIN' ? 'ADMIN' : 'USER';
     if (!window.confirm(`Chuyển quyền tài khoản này thành ${label}?`)) return;
     try {
-      await apiClient.patch(`/users/${userId}/role`, {}, {
-        params: { role: newRole },
-      });
+      await apiClient.patch(
+        `/users/${userId}/role`,
+        {},
+        {
+          params: { role: newRole },
+        },
+      );
       setUsers((prev) =>
         prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)),
       );
