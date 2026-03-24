@@ -68,7 +68,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   cancelOrder: async (orderId, reason) => {
-    await apiClient.patch(ENDPOINTS.ORDERS.CANCEL(orderId), null, {
+    await apiClient.patch(ENDPOINTS.ORDERS.CANCEL(orderId), {}, {
       params: { reason },
     });
     const currentOrder = get().currentOrder;
