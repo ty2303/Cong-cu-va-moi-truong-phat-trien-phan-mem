@@ -30,8 +30,15 @@ const userSchema = new mongoose.Schema({
   },
   authProvider: {
     type: String,
-    enum: ["LOCAL", "GOOGLE"],
+    enum: ["LOCAL", "GOOGLE", "GOOGLE_AND_LOCAL"],
     default: "LOCAL"
+  },
+  googleSubject: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    default: null,
   },
   createdAt: {
     type: Date,

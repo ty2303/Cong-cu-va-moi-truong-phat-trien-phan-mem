@@ -18,6 +18,7 @@ export const db = {
 			role: "USER",
 			hasPassword: true,
 			authProvider: "LOCAL",
+			googleSubject: null,
 			createdAt: now(),
 		},
 		{
@@ -28,6 +29,7 @@ export const db = {
 			role: "ADMIN",
 			hasPassword: true,
 			authProvider: "LOCAL",
+			googleSubject: null,
 			createdAt: now(),
 		},
 	],
@@ -184,7 +186,12 @@ export const db = {
 			rating: 5,
 			comment: "San pham dep, giao hang nhanh.",
 			images: [],
+			analysisResults: [
+				{ aspect: "General", sentiment: "positive", confidence: 0.94 },
+				{ aspect: "Shipping", sentiment: "positive", confidence: 0.89 },
+			],
 			createdAt: now(),
+			updatedAt: now(),
 		},
 		{
 			id: "review-2",
@@ -194,7 +201,13 @@ export const db = {
 			rating: 4,
 			comment: "May manh, man hinh dep, camera on.",
 			images: [],
+			analysisResults: [
+				{ aspect: "Performance", sentiment: "positive", confidence: 0.91 },
+				{ aspect: "Display", sentiment: "positive", confidence: 0.88 },
+				{ aspect: "Camera", sentiment: "neutral", confidence: 0.72 },
+			],
 			createdAt: now(),
+			updatedAt: now(),
 		},
 	],
 	wishlists: {

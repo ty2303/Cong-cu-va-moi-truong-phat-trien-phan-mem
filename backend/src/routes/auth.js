@@ -1,9 +1,317 @@
+import { randomBytes, randomUUID } from "node:crypto";
 import express from "express";
+import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
-import { issueToken, sanitizeUser } from "../data/store.js";
+import { db, issueToken, sanitizeUser } from "../data/store.js";
+import { isDatabaseReady } from "../data/mongodb.js";
 import { fail, ok } from "../lib/apiResponse.js";
 
 export const authRouter = express.Router();
+
+const GOOGLE_AUTH_BASE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
+const DEFAULT_GOOGLE_SCOPES = "openid email profile";
+
+function getFrontendUrl() {
+  return process.env.FRONTEND_URL?.split(",")[0]?.trim() || "http://localhost:5173";
+}
+
+function getBackendUrl(req) {
+  return (
+    process.env.BACKEND_URL?.trim() ||
+    `${req.protocol}://${req.get("host")}`
+  );
+}
+
+function buildFrontendLoginUrl(errorCode) {
+  const url = new URL("/login", getFrontendUrl());
+  if (errorCode) {
+    url.searchParams.set("error", errorCode);
+  }
+  return url.toString();
+}
+
+function buildFrontendCallbackUrl(params) {
+  const url = new URL("/oauth2/callback", getFrontendUrl());
+  Object.entries(params).forEach(([key, value]) => {
+    if (value != null) {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  return url.toString();
+}
+
+function getGoogleConfig(req) {
+  const redirectUri =
+    process.env.GOOGLE_REDIRECT_URI ??
+    `${getBackendUrl(req)}/api/auth/google/callback`;
+
+  return {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri,
+    scopes: process.env.GOOGLE_SCOPES ?? DEFAULT_GOOGLE_SCOPES,
+    jwtSecret: process.env.JWT_SECRET || "development-secret",
+  };
+}
+
+function createGoogleStateToken(jwtSecret) {
+  return jwt.sign({ nonce: randomBytes(16).toString("hex") }, jwtSecret, {
+    expiresIn: "10m",
+  });
+}
+
+function verifyGoogleStateToken(state, jwtSecret) {
+  try {
+    jwt.verify(state, jwtSecret);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeUsernameSeed(profile) {
+  const rawSeed =
+    profile.name?.trim() || profile.email?.split("@")[0] || "google_user";
+
+  return rawSeed
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 24)
+    .toLowerCase() || "google_user";
+}
+
+async function isUsernameTaken(username) {
+  if (isDatabaseReady()) {
+    const existing = await User.findOne({ username }).lean();
+    return Boolean(existing);
+  }
+
+  return db.users.some((user) => user.username === username);
+}
+
+async function generateUniqueUsername(profile) {
+  const base = normalizeUsernameSeed(profile);
+
+  if (!(await isUsernameTaken(base))) {
+    return base;
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `${base.slice(0, 18)}_${randomBytes(3).toString("hex")}`;
+    if (!(await isUsernameTaken(candidate))) {
+      return candidate;
+    }
+  }
+
+  return `google_${randomBytes(4).toString("hex")}`;
+}
+
+async function findGoogleUserByGoogleSubject(googleSubject) {
+	if (!googleSubject) {
+		return { user: null, source: isDatabaseReady() ? "mongo" : "memory" };
+	}
+
+	if (isDatabaseReady()) {
+		const mongoUser = await User.findOne({ googleSubject });
+		if (mongoUser) {
+			return { user: mongoUser, source: "mongo" };
+		}
+	}
+
+	const memoryUser = db.users.find((user) => user.googleSubject === googleSubject);
+	if (memoryUser) {
+		return { user: memoryUser, source: "memory" };
+	}
+
+	return { user: null, source: isDatabaseReady() ? "mongo" : "memory" };
+}
+
+async function findGoogleUserByEmail(email) {
+  if (isDatabaseReady()) {
+    const mongoUser = await User.findOne({ email });
+    if (mongoUser) {
+      return { user: mongoUser, source: "mongo" };
+    }
+  }
+
+  const memoryUser = db.users.find((user) => user.email === email);
+  if (memoryUser) {
+    return { user: memoryUser, source: "memory" };
+  }
+
+  return { user: null, source: isDatabaseReady() ? "mongo" : "memory" };
+}
+
+async function upsertGoogleUser(profile) {
+	const googleSubject = profile.sub?.trim();
+  const email = profile.email?.trim().toLowerCase();
+  if (!googleSubject || !email) {
+    throw new Error("Google account is missing required identity fields");
+  }
+
+	const existingGoogleUser = await findGoogleUserByGoogleSubject(googleSubject);
+	if (existingGoogleUser.user) {
+		return existingGoogleUser.user;
+	}
+
+  const { user, source } = await findGoogleUserByEmail(email);
+
+  if (user) {
+    if (source === "mongo") {
+		if (user.googleSubject && user.googleSubject !== googleSubject) {
+			throw new Error("Google account is already linked to a different subject");
+		}
+		user.googleSubject = googleSubject;
+      if (user.authProvider === "LOCAL") {
+        user.authProvider = "GOOGLE_AND_LOCAL";
+      }
+		await user.save();
+      return user;
+    }
+
+		if (user.googleSubject && user.googleSubject !== googleSubject) {
+			throw new Error("Google account is already linked to a different subject");
+		}
+		user.googleSubject = googleSubject;
+    if (user.authProvider === "LOCAL") {
+      user.authProvider = "GOOGLE_AND_LOCAL";
+    }
+    return user;
+  }
+
+  const username = await generateUniqueUsername(profile);
+  const fallbackPassword = randomUUID();
+
+  if (isDatabaseReady()) {
+    return User.create({
+      username,
+      email,
+      password: fallbackPassword,
+      role: "USER",
+      hasPassword: false,
+      authProvider: "GOOGLE",
+		googleSubject,
+    });
+  }
+
+  const newUser = {
+    id: randomUUID(),
+    username,
+    email,
+    password: fallbackPassword,
+    role: "USER",
+    hasPassword: false,
+    authProvider: "GOOGLE",
+		googleSubject,
+    createdAt: new Date().toISOString(),
+  };
+  db.users.unshift(newUser);
+  return newUser;
+}
+
+async function exchangeGoogleCode({ code, clientId, clientSecret, redirectUri }) {
+  const tokenResponse = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    throw new Error("Failed to exchange Google authorization code");
+  }
+
+  const tokenPayload = await tokenResponse.json();
+  const userInfoResponse = await fetch(GOOGLE_USERINFO_URL, {
+    headers: {
+      Authorization: `Bearer ${tokenPayload.access_token}`,
+    },
+  });
+
+  if (!userInfoResponse.ok) {
+    throw new Error("Failed to fetch Google user profile");
+  }
+
+  return userInfoResponse.json();
+}
+
+authRouter.get("/google", (req, res) => {
+  const { clientId, clientSecret, redirectUri, scopes, jwtSecret } = getGoogleConfig(req);
+  if (!clientId || !clientSecret) {
+    return res.redirect(buildFrontendLoginUrl("google_not_configured"));
+  }
+
+  const authUrl = new URL(GOOGLE_AUTH_BASE_URL);
+  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", scopes);
+  authUrl.searchParams.set("state", createGoogleStateToken(jwtSecret));
+  authUrl.searchParams.set("access_type", "offline");
+  authUrl.searchParams.set("include_granted_scopes", "true");
+  authUrl.searchParams.set("prompt", "select_account");
+
+  return res.redirect(authUrl.toString());
+});
+
+authRouter.get("/google/callback", async (req, res) => {
+  const { clientId, clientSecret, redirectUri, jwtSecret } = getGoogleConfig(req);
+  const code = typeof req.query.code === "string" ? req.query.code : null;
+  const state = typeof req.query.state === "string" ? req.query.state : null;
+  const oauthError = typeof req.query.error === "string" ? req.query.error : null;
+
+  if (!clientId || !clientSecret) {
+    return res.redirect(buildFrontendLoginUrl("google_not_configured"));
+  }
+
+  if (oauthError || !code || !state || !verifyGoogleStateToken(state, jwtSecret)) {
+    return res.redirect(buildFrontendLoginUrl("google_failed"));
+  }
+
+  try {
+    const profile = await exchangeGoogleCode({
+      code,
+      clientId,
+      clientSecret,
+      redirectUri,
+    });
+
+    if (!profile.email || profile.email_verified === false) {
+      return res.redirect(buildFrontendLoginUrl("google_failed"));
+    }
+
+    const user = await upsertGoogleUser(profile);
+    const safeUser = sanitizeUser(user);
+    const token = issueToken(safeUser.id);
+
+    return res.redirect(
+      buildFrontendCallbackUrl({
+        token,
+        id: safeUser.id,
+        username: safeUser.username,
+        email: safeUser.email,
+        role: safeUser.role,
+      }),
+    );
+  } catch (error) {
+    console.error("Google OAuth callback error:", error);
+    return res.redirect(buildFrontendLoginUrl("google_failed"));
+  }
+});
 
 /**
  * POST /api/auth/login
@@ -24,7 +332,10 @@ authRouter.post("/login", async (req, res) => {
 
   try {
     // Tìm user theo username (không lọc theo password nữa)
-    const user = await User.findOne({ username, authProvider: "LOCAL" });
+    const user = await User.findOne({
+      username,
+      authProvider: { $in: ["LOCAL", "GOOGLE_AND_LOCAL"] },
+    });
 
     if (!user) {
       return res.status(401).json(fail("Sai tên đăng nhập hoặc mật khẩu", 401));

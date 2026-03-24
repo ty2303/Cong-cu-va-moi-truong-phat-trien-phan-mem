@@ -44,6 +44,7 @@ export const ENDPOINTS = {
   REVIEWS: {
     BASE: '/reviews',
     BY_ID: (id: string) => `/reviews/${id}`,
+    UPDATE: (id: string) => `/reviews/${id}`,
     UPLOAD_IMAGE: '/reviews/upload-image',
   },
   UPLOAD: {

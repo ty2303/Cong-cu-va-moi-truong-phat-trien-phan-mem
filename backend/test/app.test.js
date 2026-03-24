@@ -19,6 +19,18 @@ async function withServer(run) {
 	}
 }
 
+async function withAbsaServer(handler, run) {
+	const server = http.createServer(handler);
+	server.listen(0);
+	const { port } = server.address();
+
+	try {
+		await run(`http://127.0.0.1:${port}/predict`);
+	} finally {
+		server.close();
+	}
+}
+
 function buildFrame(command, headers = {}, body = "") {
 	const lines = [command];
 	for (const [key, value] of Object.entries(headers)) {
@@ -155,6 +167,23 @@ function removeTestOrder(orderId) {
 	db.orders = db.orders.filter((order) => order.id !== orderId);
 }
 
+function removeTestUserByEmail(email) {
+	db.users = db.users.filter((user) => user.email !== email);
+}
+
+function createMockJsonResponse(payload, ok = true, status = 200) {
+	return {
+		ok,
+		status,
+		async json() {
+			return payload;
+		},
+		async text() {
+			return JSON.stringify(payload);
+		},
+	};
+}
+
 test("GET /health returns service status", async () => {
 	await withServer(async (port) => {
 		const response = await fetch(`http://127.0.0.1:${port}/health`);
@@ -163,6 +192,160 @@ test("GET /health returns service status", async () => {
 		assert.equal(response.status, 200);
 		assert.equal(body.status, 200);
 		assert.equal(body.data.service, "backend");
+	});
+});
+
+test("POST /api/reviews stores sentiment analysis results when ABSA responds successfully", async () => {
+	await withAbsaServer((req, res) => {
+		if (req.method !== "POST" || req.url !== "/predict") {
+			res.writeHead(404).end();
+			return;
+		}
+
+		res.writeHead(200, { "Content-Type": "application/json" });
+		res.end(
+			JSON.stringify({
+				results: [
+					{ aspect: "Battery", sentiment: "positive", confidence: 0.92 },
+					{ aspect: "Price", sentiment: "negative", confidence: 0.81 },
+				],
+			}),
+		);
+	}, async (absaUrl) => {
+		const previousUrl = process.env.ABSA_SERVICE_URL;
+		process.env.ABSA_SERVICE_URL = absaUrl;
+
+		try {
+			await withServer(async (port) => {
+				const response = await fetch(`http://127.0.0.1:${port}/api/reviews`, {
+					method: "POST",
+					headers: {
+						Authorization: "Bearer admin-token",
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						productId: "prod-iphone-15",
+						rating: 4,
+						comment: "Pin trau nhung gia hoi cao",
+						images: [],
+					}),
+				});
+				const body = await response.json();
+
+				assert.equal(response.status, 201);
+				assert.equal(body.data.analysisResults.length, 2);
+				assert.deepEqual(body.data.analysisResults[0], {
+					aspect: "Battery",
+					sentiment: "positive",
+					confidence: 0.92,
+				});
+
+				db.reviews = db.reviews.filter((review) => review.id !== body.data.id);
+				const product = db.products.find((item) => item.id === "prod-iphone-15");
+				if (product) {
+					product.rating = 5;
+				}
+			});
+		} finally {
+			if (previousUrl) {
+				process.env.ABSA_SERVICE_URL = previousUrl;
+			} else {
+				delete process.env.ABSA_SERVICE_URL;
+			}
+		}
+	});
+});
+
+test("POST /api/reviews still saves review when ABSA service is unavailable", async () => {
+	const previousUrl = process.env.ABSA_SERVICE_URL;
+	process.env.ABSA_SERVICE_URL = "http://127.0.0.1:65500/predict";
+
+	try {
+		await withServer(async (port) => {
+			const response = await fetch(`http://127.0.0.1:${port}/api/reviews`, {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer admin-token",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					productId: "prod-galaxy-s25",
+					rating: 5,
+					comment: "Man hinh dep va may chay muot",
+				}),
+			});
+			const body = await response.json();
+
+			assert.equal(response.status, 201);
+			assert.deepEqual(body.data.analysisResults, []);
+
+			db.reviews = db.reviews.filter((review) => review.id !== body.data.id);
+			const product = db.products.find((item) => item.id === "prod-galaxy-s25");
+			if (product) {
+				product.rating = 4.8;
+			}
+		});
+	} finally {
+		if (previousUrl) {
+			process.env.ABSA_SERVICE_URL = previousUrl;
+		} else {
+			delete process.env.ABSA_SERVICE_URL;
+		}
+	}
+});
+
+test("PUT /api/reviews/:id updates review content and recalculates analysis results", async () => {
+	const existingReview = db.reviews.find((review) => review.id === "review-1");
+	assert.ok(existingReview);
+	const snapshot = structuredClone(existingReview);
+
+	await withAbsaServer((req, res) => {
+		if (req.method !== "POST" || req.url !== "/predict") {
+			res.writeHead(404).end();
+			return;
+		}
+
+		res.writeHead(200, { "Content-Type": "application/json" });
+		res.end(
+			JSON.stringify({
+				results: [{ aspect: "Battery", sentiment: "neutral", confidence: 0.77 }],
+			}),
+		);
+	}, async (absaUrl) => {
+		const previousUrl = process.env.ABSA_SERVICE_URL;
+		process.env.ABSA_SERVICE_URL = absaUrl;
+
+		try {
+			await withServer(async (port) => {
+				const response = await fetch(`http://127.0.0.1:${port}/api/reviews/review-1`, {
+					method: "PUT",
+					headers: {
+						Authorization: "Bearer demo-token",
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						productId: "prod-iphone-15",
+						rating: 3,
+						comment: "Pin tam on, can dung them",
+						images: ["data:image/png;base64,ZmFrZQ=="],
+					}),
+				});
+				const body = await response.json();
+
+				assert.equal(response.status, 200);
+				assert.equal(body.data.rating, 3);
+				assert.equal(body.data.comment, "Pin tam on, can dung them");
+				assert.equal(body.data.analysisResults.length, 1);
+				assert.equal(body.data.analysisResults[0].sentiment, "neutral");
+			});
+		} finally {
+			Object.assign(existingReview, snapshot);
+			if (previousUrl) {
+				process.env.ABSA_SERVICE_URL = previousUrl;
+			} else {
+				delete process.env.ABSA_SERVICE_URL;
+			}
+		}
 	});
 });
 
@@ -390,6 +573,447 @@ test("admin middleware allows admin users", async () => {
 		assert.equal(body.status, 201);
 		assert.equal(body.message, "Tao san pham thanh cong");
 		assert.equal(body.data.name, "Test product");
+	});
+});
+
+test("GET /api/auth/google redirects to Google OAuth consent screen", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const location = response.headers.get("location");
+
+			assert.equal(response.status, 302);
+			assert.ok(location);
+			const redirectUrl = new URL(location);
+			assert.equal(
+				redirectUrl.origin,
+				"https://accounts.google.com",
+			);
+			assert.equal(
+				redirectUrl.searchParams.get("client_id"),
+				"google-client-id",
+			);
+			assert.equal(
+				redirectUrl.searchParams.get("redirect_uri"),
+				`http://127.0.0.1:${port}/api/auth/google/callback`,
+			);
+			assert.equal(redirectUrl.searchParams.get("response_type"), "code");
+			assert.ok(redirectUrl.searchParams.get("state"));
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to frontend callback with app token", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+		const originalFetch = global.fetch;
+		const googleEmail = "google-user@example.com";
+		const googleSubject = "google-subject-123";
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		global.fetch = async (input, init) => {
+			const url = String(input);
+			if (url.startsWith(`http://127.0.0.1:${port}`)) {
+				return originalFetch(input, init);
+			}
+
+			if (url === "https://oauth2.googleapis.com/token") {
+				return createMockJsonResponse({ access_token: "google-access-token" });
+			}
+
+			if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+				return createMockJsonResponse({
+					sub: googleSubject,
+					email: googleEmail,
+					email_verified: true,
+					name: "Google User",
+				});
+			}
+
+			throw new Error(`Unexpected fetch url: ${url}`);
+		};
+
+		try {
+			const startResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const startLocation = startResponse.headers.get("location");
+			assert.ok(startLocation);
+			const state = new URL(startLocation).searchParams.get("state");
+			assert.ok(state);
+
+			const callbackResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+				{ redirect: "manual" },
+			);
+			const callbackLocation = callbackResponse.headers.get("location");
+
+			assert.equal(callbackResponse.status, 302);
+			assert.ok(callbackLocation);
+			const redirectUrl = new URL(callbackLocation);
+			assert.equal(
+				`${redirectUrl.origin}${redirectUrl.pathname}`,
+				"http://localhost:5173/oauth2/callback",
+			);
+			assert.equal(redirectUrl.searchParams.get("email"), googleEmail);
+			assert.equal(redirectUrl.searchParams.get("role"), "USER");
+			assert.ok(redirectUrl.searchParams.get("token"));
+			assert.ok(redirectUrl.searchParams.get("id"));
+			assert.ok(redirectUrl.searchParams.get("username"));
+			const storedUser = db.users.find((user) => user.email === googleEmail);
+			assert.ok(storedUser);
+			assert.equal(storedUser.googleSubject, googleSubject);
+		} finally {
+			global.fetch = originalFetch;
+			removeTestUserByEmail(googleEmail);
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback reuses user matched by Google subject", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+		const originalFetch = global.fetch;
+		const googleSubject = "google-subject-repeat";
+		const originalEmail = "repeat-google@example.com";
+		const changedEmail = "repeat-google-new@example.com";
+		const seededUser = {
+			id: "google-user-repeat",
+			username: "repeat_google",
+			email: originalEmail,
+			password: "random-password",
+			role: "USER",
+			hasPassword: false,
+			authProvider: "GOOGLE",
+			googleSubject,
+			createdAt: new Date().toISOString(),
+		};
+
+		db.users.unshift(seededUser);
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		global.fetch = async (input, init) => {
+			const url = String(input);
+			if (url.startsWith(`http://127.0.0.1:${port}`)) {
+				return originalFetch(input, init);
+			}
+
+			if (url === "https://oauth2.googleapis.com/token") {
+				return createMockJsonResponse({ access_token: "google-access-token" });
+			}
+
+			if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+				return createMockJsonResponse({
+					sub: googleSubject,
+					email: changedEmail,
+					email_verified: true,
+					name: "Google User Repeat",
+				});
+			}
+
+			throw new Error(`Unexpected fetch url: ${url}`);
+		};
+
+		try {
+			const startResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const state = new URL(startResponse.headers.get("location")).searchParams.get(
+				"state",
+			);
+			assert.ok(state);
+
+			const callbackResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+				{ redirect: "manual" },
+			);
+			const callbackLocation = callbackResponse.headers.get("location");
+
+			assert.equal(callbackResponse.status, 302);
+			assert.ok(callbackLocation);
+			const redirectUrl = new URL(callbackLocation);
+			assert.equal(redirectUrl.searchParams.get("id"), seededUser.id);
+			assert.equal(redirectUrl.searchParams.get("email"), originalEmail);
+			assert.equal(
+				db.users.filter((user) => user.googleSubject === googleSubject).length,
+				1,
+			);
+		} finally {
+			global.fetch = originalFetch;
+			removeTestUserByEmail(originalEmail);
+			removeTestUserByEmail(changedEmail);
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to login when Google subject is missing", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+		const originalFetch = global.fetch;
+		const googleEmail = "missing-sub@example.com";
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		global.fetch = async (input, init) => {
+			const url = String(input);
+			if (url.startsWith(`http://127.0.0.1:${port}`)) {
+				return originalFetch(input, init);
+			}
+
+			if (url === "https://oauth2.googleapis.com/token") {
+				return createMockJsonResponse({ access_token: "google-access-token" });
+			}
+
+			if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+				return createMockJsonResponse({
+					email: googleEmail,
+					email_verified: true,
+					name: "Google User Missing Subject",
+				});
+			}
+
+			throw new Error(`Unexpected fetch url: ${url}`);
+		};
+
+		try {
+			const startResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const state = new URL(startResponse.headers.get("location")).searchParams.get(
+				"state",
+			);
+			assert.ok(state);
+
+			const callbackResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+				{ redirect: "manual" },
+			);
+
+			assert.equal(callbackResponse.status, 302);
+			assert.equal(
+				callbackResponse.headers.get("location"),
+				"http://localhost:5173/login?error=google_failed",
+			);
+			assert.equal(
+				db.users.some((user) => user.email === googleEmail),
+				false,
+			);
+		} finally {
+			global.fetch = originalFetch;
+			removeTestUserByEmail(googleEmail);
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google redirects to login when Google config is missing", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+		};
+
+		process.env.FRONTEND_URL = "http://localhost:5173,http://127.0.0.1:5173";
+		delete process.env.GOOGLE_CLIENT_ID;
+		delete process.env.GOOGLE_CLIENT_SECRET;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			assert.equal(response.status, 302);
+			assert.equal(
+				response.headers.get("location"),
+				"http://localhost:5173/login?error=google_not_configured",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google uses BACKEND_URL to build local callback URI", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			BACKEND_URL: process.env.BACKEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+
+		process.env.BACKEND_URL = "http://localhost:8080";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		delete process.env.GOOGLE_REDIRECT_URI;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const location = response.headers.get("location");
+			assert.ok(location);
+			const redirectUrl = new URL(location);
+			assert.equal(
+				redirectUrl.searchParams.get("redirect_uri"),
+				"http://localhost:8080/api/auth/google/callback",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to login when state is invalid", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=invalid-state`,
+				{ redirect: "manual" },
+			);
+			assert.equal(response.status, 302);
+			assert.equal(
+				response.headers.get("location"),
+				"http://localhost:5173/login?error=google_failed",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to login when Google denies access", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+		};
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+
+		try {
+			const response = await fetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?error=access_denied`,
+				{ redirect: "manual" },
+			);
+			assert.equal(response.status, 302);
+			assert.equal(
+				response.headers.get("location"),
+				"http://localhost:5173/login?error=google_failed",
+			);
+		} finally {
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
 	});
 });
 
