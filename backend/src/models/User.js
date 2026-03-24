@@ -33,6 +33,13 @@ const userSchema = new mongoose.Schema({
     enum: ["LOCAL", "GOOGLE", "GOOGLE_AND_LOCAL"],
     default: "LOCAL"
   },
+  googleSubject: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now

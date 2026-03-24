@@ -18,6 +18,7 @@ export const db = {
 			role: "USER",
 			hasPassword: true,
 			authProvider: "LOCAL",
+			googleSubject: null,
 			createdAt: now(),
 		},
 		{
@@ -28,6 +29,7 @@ export const db = {
 			role: "ADMIN",
 			hasPassword: true,
 			authProvider: "LOCAL",
+			googleSubject: null,
 			createdAt: now(),
 		},
 	],

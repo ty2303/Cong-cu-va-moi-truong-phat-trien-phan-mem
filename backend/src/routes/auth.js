@@ -113,6 +113,26 @@ async function generateUniqueUsername(profile) {
   return `google_${randomBytes(4).toString("hex")}`;
 }
 
+async function findGoogleUserByGoogleSubject(googleSubject) {
+	if (!googleSubject) {
+		return { user: null, source: isDatabaseReady() ? "mongo" : "memory" };
+	}
+
+	if (isDatabaseReady()) {
+		const mongoUser = await User.findOne({ googleSubject });
+		if (mongoUser) {
+			return { user: mongoUser, source: "mongo" };
+		}
+	}
+
+	const memoryUser = db.users.find((user) => user.googleSubject === googleSubject);
+	if (memoryUser) {
+		return { user: memoryUser, source: "memory" };
+	}
+
+	return { user: null, source: isDatabaseReady() ? "mongo" : "memory" };
+}
+
 async function findGoogleUserByEmail(email) {
   if (isDatabaseReady()) {
     const mongoUser = await User.findOne({ email });
@@ -130,22 +150,36 @@ async function findGoogleUserByEmail(email) {
 }
 
 async function upsertGoogleUser(profile) {
+	const googleSubject = profile.sub?.trim();
   const email = profile.email?.trim().toLowerCase();
-  if (!email) {
-    throw new Error("Google account is missing email");
+  if (!googleSubject || !email) {
+    throw new Error("Google account is missing required identity fields");
   }
+
+	const existingGoogleUser = await findGoogleUserByGoogleSubject(googleSubject);
+	if (existingGoogleUser.user) {
+		return existingGoogleUser.user;
+	}
 
   const { user, source } = await findGoogleUserByEmail(email);
 
   if (user) {
     if (source === "mongo") {
+		if (user.googleSubject && user.googleSubject !== googleSubject) {
+			throw new Error("Google account is already linked to a different subject");
+		}
+		user.googleSubject = googleSubject;
       if (user.authProvider === "LOCAL") {
         user.authProvider = "GOOGLE_AND_LOCAL";
-        await user.save();
       }
+		await user.save();
       return user;
     }
 
+		if (user.googleSubject && user.googleSubject !== googleSubject) {
+			throw new Error("Google account is already linked to a different subject");
+		}
+		user.googleSubject = googleSubject;
     if (user.authProvider === "LOCAL") {
       user.authProvider = "GOOGLE_AND_LOCAL";
     }
@@ -163,6 +197,7 @@ async function upsertGoogleUser(profile) {
       role: "USER",
       hasPassword: false,
       authProvider: "GOOGLE",
+		googleSubject,
     });
   }
 
@@ -174,6 +209,7 @@ async function upsertGoogleUser(profile) {
     role: "USER",
     hasPassword: false,
     authProvider: "GOOGLE",
+		googleSubject,
     createdAt: new Date().toISOString(),
   };
   db.users.unshift(newUser);

@@ -634,6 +634,7 @@ test("GET /api/auth/google/callback redirects to frontend callback with app toke
 		};
 		const originalFetch = global.fetch;
 		const googleEmail = "google-user@example.com";
+		const googleSubject = "google-subject-123";
 
 		process.env.FRONTEND_URL = "http://localhost:5173";
 		process.env.GOOGLE_CLIENT_ID = "google-client-id";
@@ -652,6 +653,7 @@ test("GET /api/auth/google/callback redirects to frontend callback with app toke
 
 			if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
 				return createMockJsonResponse({
+					sub: googleSubject,
 					email: googleEmail,
 					email_verified: true,
 					name: "Google User",
@@ -689,6 +691,176 @@ test("GET /api/auth/google/callback redirects to frontend callback with app toke
 			assert.ok(redirectUrl.searchParams.get("token"));
 			assert.ok(redirectUrl.searchParams.get("id"));
 			assert.ok(redirectUrl.searchParams.get("username"));
+			const storedUser = db.users.find((user) => user.email === googleEmail);
+			assert.ok(storedUser);
+			assert.equal(storedUser.googleSubject, googleSubject);
+		} finally {
+			global.fetch = originalFetch;
+			removeTestUserByEmail(googleEmail);
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback reuses user matched by Google subject", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+		const originalFetch = global.fetch;
+		const googleSubject = "google-subject-repeat";
+		const originalEmail = "repeat-google@example.com";
+		const changedEmail = "repeat-google-new@example.com";
+		const seededUser = {
+			id: "google-user-repeat",
+			username: "repeat_google",
+			email: originalEmail,
+			password: "random-password",
+			role: "USER",
+			hasPassword: false,
+			authProvider: "GOOGLE",
+			googleSubject,
+			createdAt: new Date().toISOString(),
+		};
+
+		db.users.unshift(seededUser);
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		global.fetch = async (input, init) => {
+			const url = String(input);
+			if (url.startsWith(`http://127.0.0.1:${port}`)) {
+				return originalFetch(input, init);
+			}
+
+			if (url === "https://oauth2.googleapis.com/token") {
+				return createMockJsonResponse({ access_token: "google-access-token" });
+			}
+
+			if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+				return createMockJsonResponse({
+					sub: googleSubject,
+					email: changedEmail,
+					email_verified: true,
+					name: "Google User Repeat",
+				});
+			}
+
+			throw new Error(`Unexpected fetch url: ${url}`);
+		};
+
+		try {
+			const startResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const state = new URL(startResponse.headers.get("location")).searchParams.get(
+				"state",
+			);
+			assert.ok(state);
+
+			const callbackResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+				{ redirect: "manual" },
+			);
+			const callbackLocation = callbackResponse.headers.get("location");
+
+			assert.equal(callbackResponse.status, 302);
+			assert.ok(callbackLocation);
+			const redirectUrl = new URL(callbackLocation);
+			assert.equal(redirectUrl.searchParams.get("id"), seededUser.id);
+			assert.equal(redirectUrl.searchParams.get("email"), originalEmail);
+			assert.equal(
+				db.users.filter((user) => user.googleSubject === googleSubject).length,
+				1,
+			);
+		} finally {
+			global.fetch = originalFetch;
+			removeTestUserByEmail(originalEmail);
+			removeTestUserByEmail(changedEmail);
+			Object.entries(previousEnv).forEach(([key, value]) => {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			});
+		}
+	});
+});
+
+test("GET /api/auth/google/callback redirects to login when Google subject is missing", async () => {
+	await withServer(async (port) => {
+		const previousEnv = {
+			FRONTEND_URL: process.env.FRONTEND_URL,
+			GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+			GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+			GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+		};
+		const originalFetch = global.fetch;
+		const googleEmail = "missing-sub@example.com";
+
+		process.env.FRONTEND_URL = "http://localhost:5173";
+		process.env.GOOGLE_CLIENT_ID = "google-client-id";
+		process.env.GOOGLE_CLIENT_SECRET = "google-client-secret";
+		process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+		global.fetch = async (input, init) => {
+			const url = String(input);
+			if (url.startsWith(`http://127.0.0.1:${port}`)) {
+				return originalFetch(input, init);
+			}
+
+			if (url === "https://oauth2.googleapis.com/token") {
+				return createMockJsonResponse({ access_token: "google-access-token" });
+			}
+
+			if (url === "https://openidconnect.googleapis.com/v1/userinfo") {
+				return createMockJsonResponse({
+					email: googleEmail,
+					email_verified: true,
+					name: "Google User Missing Subject",
+				});
+			}
+
+			throw new Error(`Unexpected fetch url: ${url}`);
+		};
+
+		try {
+			const startResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google`,
+				{ redirect: "manual" },
+			);
+			const state = new URL(startResponse.headers.get("location")).searchParams.get(
+				"state",
+			);
+			assert.ok(state);
+
+			const callbackResponse = await originalFetch(
+				`http://127.0.0.1:${port}/api/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`,
+				{ redirect: "manual" },
+			);
+
+			assert.equal(callbackResponse.status, 302);
+			assert.equal(
+				callbackResponse.headers.get("location"),
+				"http://localhost:5173/login?error=google_failed",
+			);
+			assert.equal(
+				db.users.some((user) => user.email === googleEmail),
+				false,
+			);
 		} finally {
 			global.fetch = originalFetch;
 			removeTestUserByEmail(googleEmail);
