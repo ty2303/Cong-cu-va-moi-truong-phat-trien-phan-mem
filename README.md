@@ -8,7 +8,7 @@ Du an gom:
 ## Chay local
 
 ### Backend
-
+tran dinh tyy
 ```bash
 cd backend
 npm install
